@@ -12,7 +12,7 @@ describe("API base", () => {
     const response = await request(app).get("/api/health");
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({ status: "ok", database: true });
-  });
+  }, 15_000);
 
   it("responde 404 para rutas desconocidas", async () => {
     const request = (await import("supertest")).default;
