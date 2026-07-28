@@ -58,6 +58,7 @@ const roles = [
     forbidden: "/inventarios/movimientos",
   },
 ];
+const roleTokens = new Map();
 
 const health = await request("/health");
 assert.equal(health.status, 200, `Health respondió ${health.status}`);
@@ -72,6 +73,7 @@ for (const expected of roles) {
   assert.equal(login.body.user.role, expected.role, `${expected.email}: rol inesperado`);
   assert.ok(login.body.user.permissions instanceof Array, `${expected.email}: permisos inválidos`);
   assert.equal(typeof login.body.user.authVersion, "number", `${expected.email}: authVersion ausente`);
+  roleTokens.set(expected.role, login.body.token);
 
   const allowed = await request(expected.allowed, { token: login.body.token });
   assert.equal(allowed.status, 200, `${expected.role}: ${expected.allowed} respondió ${allowed.status}`);
@@ -92,9 +94,33 @@ for (const expected of roles) {
   process.stdout.write(`✓ ${expected.role}\n`);
 }
 
-const tracking = await request("/transporte/rastreo/SCM-BO-2026-001");
-assert.equal(tracking.status, 200, `Rastreo público respondió ${tracking.status}`);
-assert.equal(tracking.body.shipment.tracking_code, "SCM-BO-2026-001");
+for (const trackingCode of [
+  "SCM-BO-2026-001",
+  "SCM-BR-2026-003",
+  "SCM-AR-2026-004",
+  "SCM-BO-2026-008",
+]) {
+  const tracking = await request(`/transporte/rastreo/${trackingCode}`);
+  assert.equal(tracking.status, 200, `${trackingCode}: rastreo respondió ${tracking.status}`);
+  assert.equal(tracking.body.shipment.tracking_code, trackingCode);
+  assert.ok(tracking.body.items instanceof Array && tracking.body.items.length > 0);
+  assert.equal(typeof tracking.body.shipment.position_state, "string");
+  assert.equal(typeof tracking.body.shipment.incident_count, "number");
+}
+
+const operationalMap = await request("/logistica/mapa-envios", {
+  token: roleTokens.get("LOGISTICS_MANAGER"),
+});
+assert.equal(operationalMap.status, 200, `Mapa global respondió ${operationalMap.status}`);
+assert.ok(operationalMap.body.length >= 5, "El mapa debe incluir varios flujos activos");
+assert.ok(
+  operationalMap.body.some((shipment) => shipment.status === "INCIDENCIA"),
+  "El mapa debe incluir una incidencia demostrativa",
+);
+assert.ok(
+  operationalMap.body.some((shipment) => shipment.status === "RETRASADO"),
+  "El mapa debe incluir un retraso demostrativo",
+);
 
 const missingTracking = await request("/transporte/rastreo/SCM-NO-EXISTE");
 assert.equal(missingTracking.status, 404);

@@ -9,6 +9,7 @@
     "test": "pnpm --filter ./backend test && pnpm --filter ./frontend test",
     "typecheck": "pnpm --filter ./backend typecheck && pnpm --filter ./frontend typecheck",
     "check": "pnpm typecheck && pnpm test && pnpm build",
+    "demo:telemetry": "node scripts/simulate-telemetry.mjs",
     "verify:system": "node scripts/verify-system.mjs",
     "verify:workflows": "node scripts/verify-workflows.mjs"
   },

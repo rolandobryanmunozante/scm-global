@@ -81,6 +81,37 @@ BEGIN
   END IF;
 
   SELECT COUNT(*) INTO violations
+  FROM (
+    SELECT vehicle_id
+    FROM shipments
+    WHERE status IN ('EN_TRANSITO','EN_ADUANA','INCIDENCIA','RETRASADO')
+    GROUP BY vehicle_id HAVING COUNT(*)>1
+  ) conflicts;
+  IF violations > 0 THEN
+    RAISE EXCEPTION 'Hay % vehículos asignados a más de un envío activo', violations;
+  END IF;
+
+  SELECT COUNT(*) INTO violations
+  FROM (
+    SELECT driver_id
+    FROM shipments
+    WHERE status IN ('EN_TRANSITO','EN_ADUANA','INCIDENCIA','RETRASADO')
+    GROUP BY driver_id HAVING COUNT(*)>1
+  ) conflicts;
+  IF violations > 0 THEN
+    RAISE EXCEPTION 'Hay % transportistas asignados a más de un envío activo', violations;
+  END IF;
+
+  SELECT COUNT(*) INTO violations
+  FROM shipments s
+  JOIN vehicles v ON v.id=s.vehicle_id
+  WHERE s.status IN ('EN_TRANSITO','EN_ADUANA','INCIDENCIA','RETRASADO')
+    AND (v.current_latitude IS NULL OR v.current_longitude IS NULL OR v.last_position_at IS NULL);
+  IF violations > 0 THEN
+    RAISE EXCEPTION 'Hay % vehículos activos sin observabilidad de posición', violations;
+  END IF;
+
+  SELECT COUNT(*) INTO violations
   FROM shipments s
   WHERE s.purchase_order_id IS NOT NULL
     AND EXISTS (

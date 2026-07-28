@@ -25,6 +25,19 @@ Direcciones:
 - Aplicación: <http://localhost:8080>
 - API: <http://localhost:4000/api/health>
 - Rastreo inicial: <http://localhost:8080/rastreo/SCM-BO-2026-001>
+- Incidencia activa: <http://localhost:8080/rastreo/SCM-BR-2026-003>
+- Retraso activo: <http://localhost:8080/rastreo/SCM-AR-2026-004>
+- Distribución en tránsito: <http://localhost:8080/rastreo/SCM-BO-2026-007>
+
+Para mostrar movimiento en vivo, abra una segunda terminal y ejecute:
+
+```powershell
+pnpm.cmd demo:telemetry
+```
+
+Las pantallas **Mapa global**, **Transporte** y **Rastreo público** se actualizan por
+WebSocket. La simulación no cambia una incidencia o retraso a “en tránsito”; esos
+estados sólo se normalizan publicando el evento **Resolución de alerta**.
 
 Todos los usuarios demostrativos usan la contraseña `SCM2026!`.
 

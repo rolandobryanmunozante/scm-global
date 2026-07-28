@@ -7,7 +7,7 @@ import { audit } from "../../shared/audit.js";
 import { pool } from "../../shared/db.js";
 import { AppError } from "../../shared/errors.js";
 import { estimateDuration, routeDistance, type Coordinate } from "../../shared/geo.js";
-import { emitEvent } from "../../shared/realtime.js";
+import { emitEvent, emitShipmentEvent } from "../../shared/realtime.js";
 
 const router = Router();
 router.use(authenticate);
@@ -216,7 +216,25 @@ router.get(
     const result = await pool.query(
       `SELECT s.id,s.tracking_code,s.origin,s.destination,s.status,s.current_latitude,
               s.current_longitude,s.eta_at,s.departure_at,r.transport_mode,r.name AS route,
-              u.full_name AS driver,v.plate
+              r.origin_latitude,r.origin_longitude,r.destination_latitude,r.destination_longitude,
+              u.full_name AS driver,v.plate,v.type AS vehicle,v.last_position_at,
+              (s.status='RETRASADO' OR s.eta_at<NOW()) AS is_delayed,
+              GREATEST(s.delay_minutes,
+                GREATEST(ROUND(EXTRACT(EPOCH FROM (NOW()-s.eta_at))/60),0)::INTEGER
+              ) AS delay_minutes,
+              CASE
+                WHEN NOW()-COALESCE(v.last_position_at,s.updated_at) <= INTERVAL '15 minutes' THEN 'EN_VIVO'
+                WHEN NOW()-COALESCE(v.last_position_at,s.updated_at) <= INTERVAL '60 minutes' THEN 'RECIENTE'
+                ELSE 'SIN_ACTUALIZAR'
+              END AS position_state,
+              (SELECT COUNT(*)::INTEGER FROM shipment_items item
+               WHERE item.shipment_id=s.id) AS item_count,
+              (SELECT COALESCE(SUM(item.quantity),0)::INTEGER FROM shipment_items item
+               WHERE item.shipment_id=s.id) AS cargo_units,
+              (SELECT COUNT(*)::INTEGER FROM shipment_events event
+               WHERE event.shipment_id=s.id AND event.event_type='INCIDENCIA') AS incident_count,
+              (SELECT event.description FROM shipment_events event
+               WHERE event.shipment_id=s.id ORDER BY event.created_at DESC LIMIT 1) AS latest_event
        FROM shipments s
        JOIN routes r ON r.id=s.route_id
        LEFT JOIN users u ON u.id=s.driver_id
@@ -418,6 +436,7 @@ router.post(
       );
       await audit(request, { action: "CREATE", entityType: "shipment", entityId: shipment.rows[0].id }, client);
       await client.query("COMMIT");
+      emitShipmentEvent(shipment.rows[0].id, "shipment:created", shipment.rows[0]);
       if (originWarehouseId) {
         emitEvent("inventory", "stock:reserved", {
           shipmentId: shipment.rows[0].id,

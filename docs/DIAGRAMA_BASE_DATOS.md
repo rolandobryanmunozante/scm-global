@@ -173,6 +173,9 @@ erDiagram
         enum transport_mode
         numeric capacity_kg
         numeric capacity_m3
+        numeric current_latitude
+        numeric current_longitude
+        timestamptz last_position_at
         boolean active
     }
 

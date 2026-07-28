@@ -23,7 +23,7 @@ io.on("connection", (socket) => {
   const rooms = socket.handshake.auth.rooms;
   if (Array.isArray(rooms)) {
     for (const room of rooms.slice(0, 20)) {
-      if (typeof room === "string" && /^[a-z]+:\d+$|^inventory$/.test(room)) {
+      if (typeof room === "string" && /^(?:[a-z]+:\d+|inventory|shipments)$/.test(room)) {
         void socket.join(room);
       }
     }

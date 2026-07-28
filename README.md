@@ -5,6 +5,7 @@ Sistema web integral de gestión de la cadena de suministro, implementado y audi
 La [guía completa de instalación, operación y despliegue](docs/GUIA_INSTALACION.md) incluye instrucciones para Windows, Linux, macOS y servidores con HTTPS.
 La [matriz de cumplimiento](docs/CUMPLIMIENTO_REQUISITOS.md) relaciona las 25 historias con su evidencia y límites, y la [arquitectura de datos](docs/ARQUITECTURA_Y_DATOS.md) describe los flujos transaccionales.
 La [guía de presentación integral](docs/GUIA_PRESENTACION_DEMO.md) propone un recorrido demostrativo con los nueve roles, compra entrante, distribución entre almacenes, rastreo, reportes y auditoría.
+La [guía de actualización para el equipo](docs/GUIA_ACTUALIZACION_EQUIPO.md) explica cómo recibir `main`, las imágenes Docker y las migraciones sin perder datos.
 
 ## Arranque rápido con Docker
 
@@ -58,6 +59,9 @@ Accesos:
 - Salud de la API: <http://localhost:4000/api/health>
 - PostgreSQL: `localhost:5435`
 - Rastreo público de ejemplo: <http://localhost:8080/rastreo/SCM-BO-2026-001>
+- Rastreo con incidencia: <http://localhost:8080/rastreo/SCM-BR-2026-003>
+- Rastreo con retraso: <http://localhost:8080/rastreo/SCM-AR-2026-004>
+- Rastreo en tránsito: <http://localhost:8080/rastreo/SCM-BO-2026-007>
 
 Credencial administrativa:
 
@@ -139,8 +143,9 @@ Luego apunte el proxy HTTPS del servidor al puerto `8080`. El frontend usa rutas
 - Planificación visual de rutas con Leaflet y OpenStreetMap.
 - Rutas con propósito explícito de compra entrante, distribución saliente o uso mixto.
 - Creación de envíos con flujo explícito, asignación compatible de vehículo/transportista y notificaciones.
-- Seguimiento público con código único, ubicación, ETA, evidencia e historial en tiempo real.
-- Mapa global de embarques.
+- Buscador público de rastreo con ejemplos, carga, ubicación, ETA, evidencia e historial en tiempo real.
+- Centro de monitoreo global con posición de flota, frescura de telemetría, retrasos e incidencias.
+- Estados explícitos de retraso y resolución, conservados correctamente durante actualizaciones de ubicación.
 - Dashboard con KPIs, filtros y gráficos.
 - Reportes PDF y Excel.
 - Auditoría de acciones, preferencias de notificación e infraestructura parcial de idiomas español, inglés y portugués.
@@ -162,6 +167,9 @@ Las migraciones se ejecutan automáticamente en una base nueva:
 - `database/migrations/003_integrity_workflows.sql`: recepción, revocación, relaciones de almacenes y permisos granulares.
 - `database/migrations/004_logistics_flow_semantics.sql`: propósito de rutas, tipo de flujo de envíos y consistencia compra/distribución.
 - `database/migrations/005_inbound_state_consistency.sql`: sincronización de recepción y entrega en compras transportadas.
+- `database/migrations/006_transport_observability.sql`: telemetría de vehículos y eventos de retraso/resolución.
+- `database/migrations/007_operational_demo_data.sql`: flujos correlacionados en varias etapas para todos los roles.
+- `database/migrations/008_shipment_delay_minutes.sql`: duración persistente de retrasos y alertas operativas.
 
 `database/migrate.sh` registra cada archivo aplicado en `schema_migrations`. La información persiste en el volumen `scm_postgres_data`, normalmente prefijado con el nombre del proyecto Compose.
 
@@ -176,6 +184,15 @@ pnpm dev
 ```
 
 `pnpm check` ejecuta verificación TypeScript, pruebas automatizadas y compilaciones de producción de backend y frontend.
+
+Para mover en tiempo real los camiones demostrativos mientras presenta el mapa:
+
+```powershell
+pnpm.cmd demo:telemetry
+```
+
+La simulación usa el mismo flujo autenticado que puede consumir una integración GPS;
+no afirma conectividad con un dispositivo físico.
 
 En una instalación Docker descartable:
 
