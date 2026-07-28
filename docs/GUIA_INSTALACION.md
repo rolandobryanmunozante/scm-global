@@ -61,6 +61,10 @@ Variables disponibles:
 | `POSTGRES_USER` | Usuario de PostgreSQL | `scm_user` |
 | `POSTGRES_PASSWORD` | Contraseña de PostgreSQL | `scm_password` |
 | `POSTGRES_PORT` | Puerto local de PostgreSQL | `5435` |
+| `BACKEND_PORT` | Puerto local directo de la API | `4000` |
+| `WEB_PORT` | Puerto local de la aplicación | `8080` |
+| `BACKEND_IMAGE` | Imagen publicada del backend | `ghcr.io/rolandobryanmunozante/scm-global-backend:latest` |
+| `FRONTEND_IMAGE` | Imagen publicada del frontend | `ghcr.io/rolandobryanmunozante/scm-global-frontend:latest` |
 | `JWT_SECRET` | Firma de los tokens de acceso | Debe cambiarse en producción |
 | `WEB_ORIGIN` | Orígenes permitidos para CORS y Socket.IO | Frontend local |
 | `SMTP_HOST` | Servidor de correo opcional | Vacío |
@@ -81,6 +85,9 @@ Con Docker Desktop abierto:
 .\iniciar-scm.ps1
 ```
 
+El script descarga las imágenes publicadas. Para construir una modificación desde
+el código local use `.\iniciar-scm.ps1 -Build`.
+
 Si PowerShell bloquea scripts locales:
 
 ```powershell
@@ -90,10 +97,26 @@ powershell -ExecutionPolicy Bypass -File .\iniciar-scm.ps1
 ### Linux y macOS
 
 ```bash
-docker compose up -d --build
+docker compose pull
+docker compose up -d --no-build --wait
 ```
 
-La primera ejecución descarga las imágenes base, compila las aplicaciones, crea PostgreSQL 16, ejecuta las migraciones y carga datos de demostración. Puede tardar varios minutos.
+En Windows, `iniciar-scm.ps1` ejecuta estos mismos comandos:
+
+```powershell
+docker compose pull
+docker compose up -d --no-build --wait
+```
+
+Las imágenes de backend y frontend se publican automáticamente en GitHub Container
+Registry después de cada cambio aceptado en `main`. La primera ejecución crea
+PostgreSQL 16, ejecuta las migraciones y carga datos de demostración.
+
+Para desarrollar o comprobar una modificación local, reconstruya desde el código:
+
+```bash
+docker compose up -d --build --wait
+```
 
 Compruebe el estado:
 
@@ -101,7 +124,7 @@ Compruebe el estado:
 docker compose ps
 ```
 
-Los servicios `scm-postgres`, `scm-backend` y `scm-frontend` deben indicar `healthy`.
+Los servicios `postgres`, `backend` y `frontend` deben indicar `healthy`. `migrate` debe aparecer como terminado correctamente (`Exited (0)`).
 
 ## 5. Acceder
 
@@ -193,11 +216,14 @@ Antes de restaurar, conserve una copia del estado actual y confirme que el archi
 
 ```bash
 git pull
-docker compose up -d --build
+docker compose pull
+docker compose up -d --no-build --wait
 docker compose ps
 ```
 
-Docker reutiliza las capas sin cambios y reconstruye únicamente lo necesario. No use `down -v` durante una actualización normal.
+Docker descarga únicamente las capas nuevas de las imágenes publicadas. Para probar
+código local todavía no publicado use `docker compose up -d --build --wait`. No use
+`down -v` durante una actualización normal.
 
 ## 10. Publicación con dominio y HTTPS
 
@@ -206,7 +232,7 @@ En el servidor:
 1. Instale Docker Engine y el complemento Docker Compose.
 2. Clone el repositorio y copie `.env.example` como `.env`.
 3. Configure contraseñas fuertes y `WEB_ORIGIN` con el dominio HTTPS exacto.
-4. Ejecute `docker compose up -d --build`.
+4. Ejecute `docker compose pull` y `docker compose up -d --no-build --wait`.
 5. Configure Nginx, Caddy, Traefik o el balanceador de la plataforma para enviar el dominio al puerto `8080`.
 6. Exponga en el firewall únicamente `80` y `443`.
 
@@ -274,9 +300,16 @@ docker compose logs --tail 200 postgres
 docker compose logs --tail 200 frontend
 ```
 
-### Cambié una migración pero no se ejecutó
+### Agregué una migración pero no se ejecutó
 
-Las migraciones del directorio `database/migrations` se ejecutan automáticamente únicamente cuando PostgreSQL crea un volumen vacío. En desarrollo puede reinicializar con `docker compose down -v`; en producción debe aplicar una migración incremental y conservar una copia de seguridad.
+Cada archivo nuevo de `database/migrations` debe tener un prefijo numérico superior y no debe reutilizar el nombre de una migración aplicada. El servicio `migrate` lo ejecuta en el siguiente `docker compose up`. Consulte:
+
+```bash
+docker compose logs migrate
+docker compose exec -T postgres psql -U scm_user -d scm_global -c "TABLE schema_migrations"
+```
+
+No edite una migración aplicada ni use `down -v` durante una actualización normal.
 
 ### No llegan correos
 

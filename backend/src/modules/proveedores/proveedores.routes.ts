@@ -144,6 +144,26 @@ router.delete(
   }),
 );
 
+router.patch(
+  "/:id/estado",
+  requirePermission("suppliers.write"),
+  asyncHandler(async (request, response) => {
+    const id = z.coerce.number().int().positive().parse(request.params.id);
+    const { active } = z.object({ active: z.boolean() }).parse(request.body);
+    const result = await pool.query(
+      "UPDATE suppliers SET active=$2,updated_at=NOW() WHERE id=$1 RETURNING id,active",
+      [id, active],
+    );
+    if (!result.rowCount) throw new AppError(404, "Proveedor no encontrado");
+    await audit(request, {
+      action: active ? "REACTIVATE" : "DEACTIVATE",
+      entityType: "supplier",
+      entityId: id,
+    });
+    response.json(result.rows[0]);
+  }),
+);
+
 router.get(
   "/:id/calificaciones",
   requirePermission("suppliers.read"),

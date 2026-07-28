@@ -1,3 +1,7 @@
+param(
+  [switch]$Build
+)
+
 $ErrorActionPreference = "Stop"
 
 $projectDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -17,8 +21,18 @@ if (-not (Test-Path -LiteralPath ".env")) {
   Write-Host "Se creó .env a partir de .env.example."
 }
 
-Write-Host "Construyendo e iniciando SCM Global..."
-docker compose up -d --build
+if ($Build) {
+  Write-Host "Construyendo e iniciando SCM Global desde el código local..."
+  docker compose up -d --build --wait
+} else {
+  Write-Host "Descargando las imágenes publicadas de SCM Global..."
+  docker compose pull
+  if ($LASTEXITCODE -ne 0) {
+    throw "No se pudieron descargar las imágenes publicadas."
+  }
+  Write-Host "Iniciando SCM Global..."
+  docker compose up -d --no-build --wait
+}
 if ($LASTEXITCODE -ne 0) {
   throw "Docker Compose no pudo iniciar el sistema."
 }

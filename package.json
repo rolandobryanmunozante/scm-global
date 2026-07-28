@@ -8,7 +8,9 @@
     "build": "pnpm --filter ./backend build && pnpm --filter ./frontend build",
     "test": "pnpm --filter ./backend test && pnpm --filter ./frontend test",
     "typecheck": "pnpm --filter ./backend typecheck && pnpm --filter ./frontend typecheck",
-    "check": "pnpm typecheck && pnpm test && pnpm build"
+    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "verify:system": "node scripts/verify-system.mjs",
+    "verify:workflows": "node scripts/verify-workflows.mjs"
   },
   "engines": {
     "node": ">=20",

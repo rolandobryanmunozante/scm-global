@@ -1,4 +1,3 @@
-import ExcelJS from "exceljs";
 import { Router } from "express";
 import PDFDocument from "pdfkit";
 import { z } from "zod";
@@ -6,17 +5,23 @@ import { asyncHandler } from "../../shared/async-handler.js";
 import { authenticate, requirePermission } from "../../shared/auth.js";
 import { pool } from "../../shared/db.js";
 import { AppError } from "../../shared/errors.js";
+import { buildReportWorkbook } from "../../shared/xlsx.js";
 
 const router = Router();
 router.use(authenticate);
 
-const filtersSchema = z.object({
-  from: z.string().date().optional(),
-  to: z.string().date().optional(),
-  country: z.string().trim().max(80).optional(),
-  categoryId: z.coerce.number().int().positive().optional(),
-  supplierId: z.coerce.number().int().positive().optional(),
-});
+const filtersSchema = z
+  .object({
+    from: z.string().date().optional(),
+    to: z.string().date().optional(),
+    country: z.string().trim().max(80).optional(),
+    categoryId: z.coerce.number().int().positive().optional(),
+    supplierId: z.coerce.number().int().positive().optional(),
+  })
+  .refine((value) => !value.from || !value.to || value.from <= value.to, {
+    message: "La fecha inicial no puede ser posterior a la final",
+    path: ["from"],
+  });
 
 router.get(
   "/dashboard",
@@ -28,10 +33,16 @@ router.get(
         pool.query(
           `SELECT COALESCE(SUM(amount),0)::FLOAT AS value
            FROM monthly_sales
-           WHERE month >= DATE_TRUNC('month',CURRENT_DATE)
-             AND ($1::TEXT IS NULL OR country=$1)
-             AND ($2::BIGINT IS NULL OR category_id=$2)`,
-          [filters.country ?? null, filters.categoryId ?? null],
+           WHERE month >= COALESCE($1::DATE,DATE_TRUNC('month',CURRENT_DATE))
+             AND month <= COALESCE($2::DATE,CURRENT_DATE)
+             AND ($3::TEXT IS NULL OR country=$3)
+             AND ($4::BIGINT IS NULL OR category_id=$4)`,
+          [
+            filters.from ?? null,
+            filters.to ?? null,
+            filters.country ?? null,
+            filters.categoryId ?? null,
+          ],
         ),
         pool.query(
           `SELECT COALESCE(SUM(s.current_quantity*p.unit_price),0)::FLOAT AS value
@@ -42,11 +53,17 @@ router.get(
         pool.query(
           `SELECT COUNT(*) FILTER (WHERE status IN ('EN_TRANSITO','EN_ADUANA','INCIDENCIA','RETRASADO'))::INTEGER AS active,
                   COUNT(*) FILTER (WHERE status='RETRASADO' OR (eta_at<NOW() AND status<>'ENTREGADO'))::INTEGER AS delayed
-           FROM shipments`,
+           FROM shipments
+           WHERE ($1::DATE IS NULL OR created_at::DATE >= $1)
+             AND ($2::DATE IS NULL OR created_at::DATE <= $2)`,
+          [filters.from ?? null, filters.to ?? null],
         ),
         pool.query(
           `SELECT COUNT(*)::INTEGER AS pending FROM purchase_orders
-           WHERE status IN ('BORRADOR','APROBADA','ENVIADA','CONFIRMADA')`,
+           WHERE status IN ('BORRADOR','APROBADA','ENVIADA','CONFIRMADA')
+             AND ($1::DATE IS NULL OR created_at::DATE >= $1)
+             AND ($2::DATE IS NULL OR created_at::DATE <= $2)`,
+          [filters.from ?? null, filters.to ?? null],
         ),
         pool.query(
           `SELECT s.commercial_name,ss.score::FLOAT AS score
@@ -172,7 +189,7 @@ router.get(
     const filters = filtersSchema.parse(request.query);
     const report = await loadReportData(filters);
     if (format === "xlsx") {
-      const buffer = await buildExcel(report, filters);
+      const buffer = await buildReportWorkbook(report, filters);
       response
         .type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         .setHeader("Content-Disposition", 'attachment; filename="reporte-scm.xlsx"')
@@ -216,50 +233,6 @@ async function loadReportData(filters: Filters) {
   return result.rows;
 }
 
-async function buildExcel(rows: Record<string, unknown>[], filters: Filters): Promise<Buffer> {
-  const workbook = new ExcelJS.Workbook();
-  workbook.creator = "SCM Global";
-  const summary = workbook.addWorksheet("Resumen");
-  summary.columns = [
-    { header: "Indicador", key: "indicator", width: 28 },
-    { header: "Valor", key: "value", width: 24 },
-  ];
-  summary.addRows([
-    { indicator: "Registros", value: rows.length },
-    {
-      indicator: "Valor total",
-      value: rows.reduce((sum, row) => sum + Number(row.total ?? 0), 0),
-    },
-    { indicator: "Generado", value: new Date() },
-    { indicator: "Filtros", value: JSON.stringify(filters) || "Sin filtros" },
-  ]);
-  summary.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
-  summary.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2563EB" } };
-  summary.getColumn("value").numFmt = '#,##0.00';
-
-  const detail = workbook.addWorksheet("Detalle");
-  detail.columns = [
-    { header: "Orden", key: "code", width: 18 },
-    { header: "Fecha", key: "created_at", width: 18, style: { numFmt: "yyyy-mm-dd" } },
-    { header: "Estado", key: "status", width: 16 },
-    { header: "Proveedor", key: "supplier", width: 28 },
-    { header: "País", key: "country", width: 16 },
-    { header: "SKU", key: "sku", width: 15 },
-    { header: "Producto", key: "product", width: 30 },
-    { header: "Categoría", key: "category", width: 18 },
-    { header: "Cantidad", key: "quantity", width: 12 },
-    { header: "Precio unitario", key: "unit_price", width: 18, style: { numFmt: '"Bs" #,##0.00' } },
-    { header: "Total", key: "total", width: 18, style: { numFmt: '"Bs" #,##0.00' } },
-  ];
-  detail.addRows(rows);
-  detail.autoFilter = { from: "A1", to: "K1" };
-  detail.views = [{ state: "frozen", ySplit: 1 }];
-  detail.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
-  detail.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2563EB" } };
-  const arrayBuffer = await workbook.xlsx.writeBuffer();
-  return Buffer.from(arrayBuffer);
-}
-
 async function buildPdf(rows: Record<string, unknown>[], filters: Filters): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const document = new PDFDocument({ size: "A4", margin: 42, bufferPages: true });
@@ -300,9 +273,10 @@ async function buildPdf(rows: Record<string, unknown>[], filters: Filters): Prom
       document
         .fontSize(8)
         .fillColor("#64748B")
-        .text(`SCM Global · Página ${index + 1} de ${pages.count}`, 42, 806, {
+        .text(`SCM Global · Página ${index + 1} de ${pages.count}`, 42, 790, {
           width: 511,
           align: "center",
+          lineBreak: false,
         });
     }
     document.end();

@@ -1,9 +1,9 @@
-import { Edit3, Filter, Plus, Search, Star, Trash2 } from "lucide-react";
+import { Edit3, Filter, Plus, RotateCcw, Search, Star, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { api, getErrorMessage } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-import { Alert, EmptyState, LoadingState, Modal, PageHeader, Stars, StatusBadge } from "../components/ui";
+import { Alert, EmptyState, LoadingState, Modal, PageHeader, Stars, StatusBadge, formatDate } from "../components/ui";
 
 interface Supplier {
   id: number;
@@ -78,6 +78,14 @@ export function SuppliersPage() {
       setError(getErrorMessage(cause));
     }
   };
+  const reactivate = async (supplier: Supplier) => {
+    try {
+      await api.patch(`/proveedores/${supplier.id}/estado`, { active: true });
+      await load();
+    } catch (cause) {
+      setError(getErrorMessage(cause));
+    }
+  };
 
   return (
     <>
@@ -113,6 +121,7 @@ export function SuppliersPage() {
                   {can("suppliers.write") && <button className="icon-button" title="Editar" onClick={() => setEditing(supplier)}><Edit3 size={14} /></button>}
                   {can("suppliers.rate") && <button className="icon-button" title="Calificar" onClick={() => setRating(supplier)}><Star size={14} /></button>}
                   {can("suppliers.write") && supplier.active && <button className="icon-button" title="Dar de baja" onClick={() => void deactivate(supplier)}><Trash2 size={14} /></button>}
+                  {can("suppliers.write") && !supplier.active && <button className="icon-button" title="Reactivar" onClick={() => void reactivate(supplier)}><RotateCcw size={14} /></button>}
                 </div></td>
               </tr>
             ))}</tbody>
@@ -171,7 +180,17 @@ function SupplierForm({ supplier, categories, open, onClose, onSaved }: { suppli
 
 function RatingForm({ supplier, open, onClose, onSaved }: { supplier: Supplier | null; open: boolean; onClose: () => void; onSaved: () => Promise<void> }) {
   const [scores, setScores] = useState({ punctuality: 5, quality: 5, price: 5, comments: "" });
+  const [history, setHistory] = useState<Array<{ id: number; punctuality: number; quality: number; price: number; weighted_score: number; comments: string | null; period_start: string; evaluator: string }>>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const [error, setError] = useState("");
+  useEffect(() => {
+    if (!supplier || !open) return;
+    setLoadingHistory(true);
+    void api.get<typeof history>(`/proveedores/${supplier.id}/calificaciones`)
+      .then(({ data }) => setHistory(data))
+      .catch((cause) => setError(getErrorMessage(cause)))
+      .finally(() => setLoadingHistory(false));
+  }, [supplier, open]);
   const submit = async (event: FormEvent) => {
     event.preventDefault(); if (!supplier) return;
     try {
@@ -182,6 +201,10 @@ function RatingForm({ supplier, open, onClose, onSaved }: { supplier: Supplier |
   return (
     <Modal open={open} title={`Calificar · ${supplier?.commercial_name ?? ""}`} onClose={onClose} width="520px">
       {error && <Alert>{error}</Alert>}
+      <div className="rating-history">
+        <strong>Historial de desempeño</strong>
+        {loadingHistory ? <LoadingState label="Cargando evaluaciones…"/> : history.length === 0 ? <p className="modal-intro">Aún no existen evaluaciones.</p> : history.slice(0,5).map((item) => <article key={item.id}><Stars value={Number(item.weighted_score)}/><div><strong>{Number(item.weighted_score).toFixed(1)} · {item.evaluator}</strong><small>{formatDate(item.period_start)} · Puntualidad {item.punctuality} · Calidad {item.quality} · Precio {item.price}</small>{item.comments && <span>{item.comments}</span>}</div></article>)}
+      </div>
       <form onSubmit={submit}>
         {(["punctuality", "quality", "price"] as const).map((field) => <label className="rating-row" key={field}><span>{{ punctuality: "Puntualidad", quality: "Calidad", price: "Precio" }[field]}</span><div>{[1,2,3,4,5].map((star) => <button type="button" key={star} className={scores[field] >= star ? "selected" : ""} onClick={() => setScores((current) => ({ ...current, [field]: star }))}>★</button>)}</div></label>)}
         <label className="field"><span>Comentarios</span><textarea value={scores.comments} onChange={(event) => setScores((current) => ({ ...current, comments: event.target.value }))} /></label>

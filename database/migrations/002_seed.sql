@@ -18,11 +18,16 @@ INSERT INTO permissions (code, name) VALUES
   ('inventory.move', 'Registrar movimientos'),
   ('inventory.transfer', 'Transferir stock'),
   ('purchases.read', 'Consultar órdenes de compra'),
+  ('purchases.write', 'Crear órdenes de compra'),
   ('purchases.approve', 'Aprobar órdenes de compra'),
+  ('purchases.receive', 'Recibir órdenes de compra'),
+  ('inventory.catalog', 'Gestionar productos y almacenes'),
   ('routes.manage', 'Gestionar rutas'),
   ('shipments.read', 'Consultar envíos'),
   ('shipments.assign', 'Asignar transporte'),
   ('shipments.update', 'Actualizar envíos'),
+  ('transport.resources', 'Gestionar vehículos'),
+  ('tracking.read', 'Consultar rastreo de envíos'),
   ('reports.read', 'Consultar dashboard y reportes'),
   ('reports.export', 'Exportar reportes'),
   ('audit.read', 'Consultar auditoría'),
@@ -33,17 +38,17 @@ SELECT r.id, p.id FROM roles r CROSS JOIN permissions p WHERE r.code = 'ADMIN';
 
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r JOIN permissions p ON p.code IN
-  ('suppliers.read','suppliers.write','suppliers.rate','inventory.read','purchases.read','purchases.approve','shipments.read','reports.read')
+  ('suppliers.read','suppliers.write','suppliers.rate','inventory.read','purchases.read','purchases.write','purchases.approve','shipments.read','reports.read')
 WHERE r.code = 'PURCHASE_MANAGER';
 
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r JOIN permissions p ON p.code IN
-  ('suppliers.read','inventory.read','inventory.move','inventory.transfer','purchases.read','shipments.read')
+  ('suppliers.read','inventory.read','inventory.move','inventory.transfer','inventory.catalog','purchases.read','purchases.receive','shipments.read')
 WHERE r.code = 'INVENTORY_MANAGER';
 
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r JOIN permissions p ON p.code IN
-  ('inventory.read','purchases.read','routes.manage','shipments.read','shipments.assign','reports.read')
+  ('inventory.read','purchases.read','routes.manage','shipments.read','shipments.assign','transport.resources','reports.read')
 WHERE r.code = 'LOGISTICS_MANAGER';
 
 INSERT INTO role_permissions (role_id, permission_id)
@@ -56,7 +61,7 @@ SELECT r.id, p.id FROM roles r JOIN permissions p ON p.code IN
 WHERE r.code = 'MANAGER';
 
 INSERT INTO role_permissions (role_id, permission_id)
-SELECT r.id, p.id FROM roles r JOIN permissions p ON p.code IN ('shipments.read')
+SELECT r.id, p.id FROM roles r JOIN permissions p ON p.code IN ('tracking.read')
 WHERE r.code = 'CLIENT';
 
 INSERT INTO role_permissions (role_id, permission_id)

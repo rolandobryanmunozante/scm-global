@@ -31,21 +31,23 @@ router.post(
   asyncHandler(async (request, response) => {
     const input = loginSchema.parse(request.body);
     const result = await pool.query(
-      `SELECT u.id, u.full_name, u.email, u.password_hash, u.supplier_id, u.active,
+      `SELECT u.id, u.full_name, u.email, u.password_hash, u.supplier_id, u.active, u.auth_version,
+              s.active AS supplier_active,
               u.failed_attempts, u.locked_until, r.code AS role,
               COALESCE(array_agg(p.code) FILTER (WHERE p.code IS NOT NULL), '{}') AS permissions
        FROM users u
        JOIN roles r ON r.id = u.role_id
+       LEFT JOIN suppliers s ON s.id=u.supplier_id
        LEFT JOIN role_permissions rp ON rp.role_id = r.id
        LEFT JOIN permissions p ON p.id = rp.permission_id
        WHERE LOWER(u.email) = $1
-       GROUP BY u.id, r.code`,
+       GROUP BY u.id, r.code, s.active`,
       [input.email],
     );
     const user = result.rows[0];
     const invalid = new AppError(401, "Correo o contraseña incorrectos");
 
-    if (!user || !user.active) {
+    if (!user || !user.active || (user.role === "SUPPLIER" && !user.supplier_active)) {
       throw invalid;
     }
     if (user.locked_until && new Date(user.locked_until) > new Date()) {
@@ -77,6 +79,7 @@ router.post(
       role: user.role as string,
       supplierId: user.supplier_id ? Number(user.supplier_id) : null,
       permissions: user.permissions as string[],
+      authVersion: Number(user.auth_version),
     };
 
     const token = signAccessToken(authUser);
@@ -91,6 +94,15 @@ router.get(
   authenticate,
   asyncHandler(async (request, response) => {
     response.json({ user: request.user });
+  }),
+);
+
+router.post(
+  "/refresh",
+  authenticate,
+  asyncHandler(async (request, response) => {
+    const token = signAccessToken(request.user!);
+    response.json({ token, expiresIn: 1800, user: request.user });
   }),
 );
 
@@ -157,7 +169,10 @@ router.post(
     try {
       await client.query("BEGIN");
       await client.query(
-        "UPDATE users SET password_hash = $2, failed_attempts = 0, locked_until = NULL WHERE id = $1",
+        `UPDATE users
+         SET password_hash=$2, failed_attempts=0, locked_until=NULL,
+             auth_version=auth_version+1, updated_at=NOW()
+         WHERE id=$1`,
         [reset.user_id, passwordHash],
       );
       await client.query("UPDATE password_reset_tokens SET used_at = NOW() WHERE id = $1", [reset.id]);
@@ -177,7 +192,14 @@ router.get(
   authenticate,
   requirePermission("users.manage"),
   asyncHandler(async (_request, response) => {
-    const result = await pool.query("SELECT id, code, name, description FROM roles ORDER BY name");
+    const result = await pool.query(
+      `SELECT r.id,r.code,r.name,r.description,
+              COALESCE(array_agg(p.code ORDER BY p.code) FILTER (WHERE p.code IS NOT NULL),'{}') AS permissions
+       FROM roles r
+       LEFT JOIN role_permissions rp ON rp.role_id=r.id
+       LEFT JOIN permissions p ON p.id=rp.permission_id
+       GROUP BY r.id ORDER BY r.name`,
+    );
     response.json(result.rows);
   }),
 );
@@ -188,8 +210,9 @@ router.get(
   requirePermission("users.manage"),
   asyncHandler(async (_request, response) => {
     const result = await pool.query(
-      `SELECT u.id, u.full_name, u.email, u.active, u.language, u.last_access,
-              r.id AS role_id, r.code AS role, r.name AS role_name, s.commercial_name AS supplier
+      `SELECT u.id,u.full_name,u.email,u.active,u.language,u.last_access,u.supplier_id,
+              u.license_number,u.license_expiry,r.id AS role_id,r.code AS role,
+              r.name AS role_name,s.commercial_name AS supplier
        FROM users u
        JOIN roles r ON r.id = u.role_id
        LEFT JOIN suppliers s ON s.id = u.supplier_id
@@ -216,6 +239,9 @@ router.post(
         license_expiry: z.string().date().nullable().optional(),
       })
       .parse(request.body);
+    const role = await getRole(input.role_id);
+    validateRoleFields(role.code, input);
+    if (role.code === "SUPPLIER") await ensureActiveSupplier(input.supplier_id!);
     const hash = await bcrypt.hash(input.password, 12);
     const result = await pool.query(
       `INSERT INTO users
@@ -227,10 +253,10 @@ router.post(
         input.email,
         hash,
         input.role_id,
-        input.supplier_id ?? null,
+        role.code === "SUPPLIER" ? input.supplier_id : null,
         input.language,
-        input.license_number ?? null,
-        input.license_expiry ?? null,
+        role.code === "DRIVER" ? input.license_number : null,
+        role.code === "DRIVER" ? input.license_expiry : null,
       ],
     );
     await audit(request, {
@@ -255,23 +281,110 @@ router.patch(
         role_id: z.coerce.number().int().positive().optional(),
         active: z.boolean().optional(),
         language: z.enum(["es", "en", "pt"]).optional(),
+        supplier_id: z.coerce.number().int().positive().nullable().optional(),
+        license_number: z.string().trim().max(50).nullable().optional(),
+        license_expiry: z.string().date().nullable().optional(),
       })
       .refine((value) => Object.keys(value).length > 0)
       .parse(request.body);
+    const currentResult = await pool.query(
+      `SELECT u.*,r.code AS role
+       FROM users u JOIN roles r ON r.id=u.role_id WHERE u.id=$1`,
+      [id],
+    );
+    const current = currentResult.rows[0];
+    if (!current) throw new AppError(404, "Usuario no encontrado");
+    if (id === request.user!.id && input.active === false) {
+      throw new AppError(400, "No puede desactivar su propia cuenta");
+    }
+    const role = input.role_id ? await getRole(input.role_id) : { id: current.role_id, code: current.role };
+    const roleFields = {
+      supplier_id: input.supplier_id !== undefined ? input.supplier_id : current.supplier_id,
+      license_number:
+        input.license_number !== undefined ? input.license_number : current.license_number,
+      license_expiry:
+        input.license_expiry !== undefined ? input.license_expiry : current.license_expiry,
+    };
+    validateRoleFields(role.code, roleFields);
+    if (role.code === "SUPPLIER") await ensureActiveSupplier(Number(roleFields.supplier_id));
+    if (
+      current.role === "ADMIN" &&
+      current.active &&
+      (input.active === false || role.code !== "ADMIN")
+    ) {
+      const otherAdmins = await pool.query(
+        `SELECT COUNT(*)::INTEGER AS total
+         FROM users u JOIN roles r ON r.id=u.role_id
+         WHERE r.code='ADMIN' AND u.active AND u.id<>$1`,
+        [id],
+      );
+      if (otherAdmins.rows[0].total === 0) {
+        throw new AppError(400, "Debe conservar al menos un administrador activo");
+      }
+    }
     const result = await pool.query(
       `UPDATE users SET
          full_name = COALESCE($2, full_name),
          role_id = COALESCE($3, role_id),
          active = COALESCE($4, active),
-         language = COALESCE($5, language)
+         language = COALESCE($5, language),
+         supplier_id = $6,
+         license_number = $7,
+         license_expiry = $8,
+         auth_version = auth_version + 1,
+         updated_at = NOW()
        WHERE id = $1
-       RETURNING id, full_name, email, active, language`,
-      [id, input.full_name ?? null, input.role_id ?? null, input.active ?? null, input.language ?? null],
+       RETURNING id,full_name,email,active,language,supplier_id,license_number,license_expiry`,
+      [
+        id,
+        input.full_name ?? null,
+        input.role_id ?? null,
+        input.active ?? null,
+        input.language ?? null,
+        role.code === "SUPPLIER" ? roleFields.supplier_id : null,
+        role.code === "DRIVER" ? roleFields.license_number : null,
+        role.code === "DRIVER" ? roleFields.license_expiry : null,
+      ],
     );
     if (!result.rowCount) throw new AppError(404, "Usuario no encontrado");
     await audit(request, { action: "UPDATE", entityType: "user", entityId: id, details: input });
     response.json(result.rows[0]);
   }),
 );
+
+async function getRole(roleId: number): Promise<{ id: number; code: string }> {
+  const result = await pool.query("SELECT id,code FROM roles WHERE id=$1", [roleId]);
+  if (!result.rowCount) throw new AppError(400, "El rol seleccionado no existe");
+  return { id: Number(result.rows[0].id), code: String(result.rows[0].code) };
+}
+
+async function ensureActiveSupplier(supplierId: number): Promise<void> {
+  const result = await pool.query("SELECT 1 FROM suppliers WHERE id=$1 AND active", [supplierId]);
+  if (!result.rowCount) throw new AppError(400, "El proveedor vinculado no existe o está inactivo");
+}
+
+function validateRoleFields(
+  role: string,
+  values: {
+    supplier_id?: number | null;
+    license_number?: string | null;
+    license_expiry?: string | Date | null;
+  },
+): void {
+  if (role === "SUPPLIER" && !values.supplier_id) {
+    throw new AppError(400, "El usuario proveedor debe estar vinculado a un proveedor");
+  }
+  if (role === "DRIVER") {
+    if (!values.license_number || !values.license_expiry) {
+      throw new AppError(400, "El transportista debe tener una licencia y fecha de vigencia");
+    }
+    const expiry = new Date(values.license_expiry);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (Number.isNaN(expiry.getTime()) || expiry < today) {
+      throw new AppError(400, "La licencia del transportista debe estar vigente");
+    }
+  }
+}
 
 export default router;
