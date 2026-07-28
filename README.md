@@ -4,6 +4,7 @@ Sistema web integral de gestión de la cadena de suministro, implementado y audi
 
 La [guía completa de instalación, operación y despliegue](docs/GUIA_INSTALACION.md) incluye instrucciones para Windows, Linux, macOS y servidores con HTTPS.
 La [matriz de cumplimiento](docs/CUMPLIMIENTO_REQUISITOS.md) relaciona las 25 historias con su evidencia y límites, y la [arquitectura de datos](docs/ARQUITECTURA_Y_DATOS.md) describe los flujos transaccionales.
+La [guía de presentación integral](docs/GUIA_PRESENTACION_DEMO.md) propone un recorrido demostrativo con los nueve roles, compra entrante, distribución entre almacenes, rastreo, reportes y auditoría.
 
 ## Arranque rápido con Docker
 
