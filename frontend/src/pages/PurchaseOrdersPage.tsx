@@ -1,4 +1,4 @@
-import { Bot, Check, ClockAlert, PackageCheck, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Bot, Check, ClockAlert, PackageCheck, Plus, RefreshCw, Trash2, Truck } from "lucide-react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { api, getErrorMessage } from "../api/client";
@@ -7,6 +7,7 @@ import { Alert, EmptyState, LoadingState, Modal, PageHeader, StatusBadge, format
 
 interface PurchaseOrder {
   id: number; code: string; supplier: string; status: string; automatic: boolean;
+  shipment_id: number | null;
   expected_delivery_date: string | null; created_at: string; total: number;
   items: Array<{ product_id: number; sku: string; product: string; quantity: number; unit_price: number }>;
 }
@@ -70,12 +71,12 @@ export function PurchaseOrdersPage() {
     {loading ? <LoadingState /> : orders.length === 0 ? <EmptyState title="No hay órdenes de compra" /> : <div className="order-grid">
       {orders.map((order) => <article className="card order-card" key={order.id}>
         <header><div><span>{order.code}</span><h3>{order.supplier}</h3></div><StatusBadge status={order.status}/></header>
-        <div className="order-origin">{order.automatic ? <><Bot size={14}/> Generada automáticamente</> : "Orden manual"}</div>
+        <div className="order-origin">{order.shipment_id ? <><Truck size={14}/> Recepción gestionada por Transporte · envío #{order.shipment_id}</> : order.automatic ? <><Bot size={14}/> Generada automáticamente</> : "Orden manual"}</div>
         <div className="order-items">{order.items.map((item) => <div key={item.product_id}><div><strong>{item.product}</strong><small>{item.sku}</small></div><span>{item.quantity} × {formatMoney(item.unit_price)}</span></div>)}</div>
         <div className="order-total"><span>Total estimado</span><strong>{formatMoney(order.total)}</strong></div>
         <footer><div><small>Generada</small><span>{formatDate(order.created_at)}</span></div><div><small>Entrega esperada</small><span>{formatDate(order.expected_delivery_date)}</span></div>
           {order.status === "BORRADOR" && can("purchases.approve") && <button className="button success" onClick={() => void approve(order.id)}><Check size={14}/> Aprobar</button>}
-          {["APROBADA","ENVIADA","CONFIRMADA"].includes(order.status) && can("purchases.receive") && <button className="button success" onClick={() => setReceiving(order)}><PackageCheck size={14}/> Recibir</button>}
+          {!order.shipment_id && ["APROBADA","ENVIADA","CONFIRMADA"].includes(order.status) && can("purchases.receive") && <button className="button success" onClick={() => setReceiving(order)}><PackageCheck size={14}/> Recibir</button>}
         </footer>
       </article>)}
     </div>}

@@ -160,6 +160,7 @@ Las migraciones se ejecutan automáticamente en una base nueva:
 - `database/migrations/002_seed.sql`: roles, permisos, usuarios y datos demostrativos.
 - `database/migrations/003_integrity_workflows.sql`: recepción, revocación, relaciones de almacenes y permisos granulares.
 - `database/migrations/004_logistics_flow_semantics.sql`: propósito de rutas, tipo de flujo de envíos y consistencia compra/distribución.
+- `database/migrations/005_inbound_state_consistency.sql`: sincronización de recepción y entrega en compras transportadas.
 
 `database/migrate.sh` registra cada archivo aplicado en `schema_migrations`. La información persiste en el volumen `scm_postgres_data`, normalmente prefijado con el nombre del proyecto Compose.
 

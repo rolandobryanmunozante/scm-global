@@ -123,6 +123,12 @@ const inboundShipment = await ok("/logistica/envios", {
 });
 assert.equal(inboundShipment.flow_type, "ENTRADA_COMPRA");
 assert.equal(inboundShipment.origin_warehouse_id, null);
+await ok(`/inventarios/ordenes-compra/${inboundOrder.id}/recibir`, {
+  method: "POST",
+  token: inventory.token,
+  expected: 409,
+  body: { warehouse_id: inboundRoute.destination_warehouse_id },
+});
 const inboundVehicles = await ok("/transporte/vehiculos", { token: logistics.token });
 const inboundVehicle = inboundVehicles.find(
   (item) =>

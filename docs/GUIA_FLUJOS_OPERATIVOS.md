@@ -79,7 +79,8 @@ delivery
 
 Inventario también puede recibir directamente una orden sin transporte. Esa opción
 sirve cuando no se necesita seguimiento de ruta; una orden ya recibida no puede
-vincularse ni recibirse por segunda vez.
+vincularse ni recibirse por segunda vez. Cuando una orden ya tiene un envío, desaparece
+el botón de recepción manual y la entrega debe registrarse desde **Transporte**.
 
 ## Ejemplo B: distribución que sale de la empresa
 
