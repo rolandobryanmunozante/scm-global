@@ -118,6 +118,19 @@ BEGIN
   IF violations > 0 THEN
     RAISE EXCEPTION 'Hay % envíos asociados a una ruta con propósito incompatible', violations;
   END IF;
+
+  SELECT COUNT(*) INTO violations
+  FROM shipments s
+  JOIN purchase_orders po ON po.id=s.purchase_order_id
+  WHERE s.flow_type='ENTRADA_COMPRA'
+    AND (
+      (s.status='ENTREGADO' AND (po.status<>'RECIBIDA' OR s.inventory_received_at IS NULL))
+      OR
+      (s.status<>'ENTREGADO' AND po.status='RECIBIDA')
+    );
+  IF violations > 0 THEN
+    RAISE EXCEPTION 'Hay % compras entrantes con estados de orden y envío contradictorios', violations;
+  END IF;
 END $$;
 
 SELECT

@@ -697,6 +697,16 @@ router.post(
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
+      const linkedShipment = await client.query(
+        "SELECT id,tracking_code,status FROM shipments WHERE purchase_order_id=$1 FOR SHARE",
+        [orderId],
+      );
+      if (linkedShipment.rowCount) {
+        throw new AppError(
+          409,
+          `La orden está vinculada al envío ${linkedShipment.rows[0].tracking_code}; registre la entrega desde Transporte`,
+        );
+      }
       const result = await receivePurchaseOrder(client, orderId, warehouse_id, request.user!.id);
       await audit(
         request,

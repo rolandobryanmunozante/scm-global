@@ -93,6 +93,7 @@ origen y no puede vincular una orden de compra. La ruta debe tener propósito
 | `002_seed.sql` | Nueve roles, permisos, usuarios y datos demostrativos. |
 | `003_integrity_workflows.sql` | Revocación de sesiones, recepción, almacenes de ruta/envío, permisos granulares e integridad adicional. |
 | `004_logistics_flow_semantics.sql` | Propósito de rutas, tipo de flujo de envíos y restricciones que separan compras entrantes de distribución saliente. |
+| `005_inbound_state_consistency.sql` | Sincronización diferida entre orden recibida y entrega del envío; reparación segura de estados históricos. |
 
 No se debe editar una migración ya aplicada en un entorno compartido. Los cambios futuros deben agregarse como `004_*.sql`, `005_*.sql`, etc.
 

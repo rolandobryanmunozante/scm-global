@@ -2,8 +2,8 @@
 
 Este archivo es el código fuente del diagrama de la base de datos. GitHub representa
 automáticamente el bloque Mermaid como un diagrama navegable. Las relaciones reflejan
-las migraciones `001_schema.sql`, `003_integrity_workflows.sql` y
-`004_logistics_flow_semantics.sql`.
+las migraciones `001_schema.sql`, `003_integrity_workflows.sql`,
+`004_logistics_flow_semantics.sql` y `005_inbound_state_consistency.sql`.
 
 ```mermaid
 erDiagram
@@ -313,6 +313,8 @@ erDiagram
   orden de compra.
 - Una ruta específica solo admite envíos de su propósito; `AMBOS` permite los dos
   tipos de flujo.
+- En una compra transportada, la orden `RECIBIDA` y el envío `ENTREGADO` se
+  confirman juntos dentro de la misma transacción.
 - Los movimientos de inventario y registros de auditoría son inmutables.
 - Las recepciones, reservas, despachos y entregas se ejecutan dentro de
   transacciones para mantener sincronizadas todas las tablas relacionadas.
