@@ -7,7 +7,7 @@ import { pool } from "../../shared/db.js";
 import { AppError } from "../../shared/errors.js";
 import { estimateDuration, haversineKm } from "../../shared/geo.js";
 import { sendMail } from "../../shared/mailer.js";
-import { emitEvent } from "../../shared/realtime.js";
+import { emitEvent, emitShipmentEvent } from "../../shared/realtime.js";
 import { receivePurchaseOrder } from "../inventarios/inventarios.service.js";
 
 const router = Router();
@@ -28,7 +28,24 @@ router.get(
       `SELECT s.id,s.tracking_code,s.origin,s.destination,s.status,s.current_latitude,
               s.current_longitude,s.departure_at,s.eta_at,s.delivered_at,
               r.transport_mode,r.estimated_distance_km,r.customs_required,
-              v.plate,v.type AS vehicle,u.full_name AS driver
+              r.origin_latitude,r.origin_longitude,r.destination_latitude,r.destination_longitude,
+              v.plate,v.type AS vehicle,u.full_name AS driver,
+              COALESCE(v.last_position_at,
+                (SELECT MAX(e.created_at) FROM shipment_events e
+                 WHERE e.shipment_id=s.id AND e.latitude IS NOT NULL AND e.longitude IS NOT NULL),
+                s.updated_at) AS last_position_at,
+              CASE
+                WHEN NOW()-COALESCE(v.last_position_at,s.updated_at) <= INTERVAL '15 minutes' THEN 'EN_VIVO'
+                WHEN NOW()-COALESCE(v.last_position_at,s.updated_at) <= INTERVAL '60 minutes' THEN 'RECIENTE'
+                ELSE 'SIN_ACTUALIZAR'
+              END AS position_state,
+              (s.status='RETRASADO' OR (s.status<>'ENTREGADO' AND s.eta_at<NOW())) AS is_delayed,
+              CASE WHEN s.status='ENTREGADO' THEN 0
+                   ELSE GREATEST(s.delay_minutes,
+                     GREATEST(ROUND(EXTRACT(EPOCH FROM (NOW()-s.eta_at))/60),0)::INTEGER)
+              END AS delay_minutes,
+              (SELECT COUNT(*)::INTEGER FROM shipment_events e
+               WHERE e.shipment_id=s.id AND e.event_type='INCIDENCIA') AS incident_count
        FROM shipments s
        JOIN routes r ON r.id=s.route_id
        LEFT JOIN vehicles v ON v.id=s.vehicle_id
@@ -45,7 +62,13 @@ router.get(
        WHERE e.shipment_id=$1 ORDER BY e.created_at`,
       [shipment.id],
     );
-    response.json({ shipment, events: events.rows });
+    const items = await pool.query(
+      `SELECT p.sku,p.name AS product,si.quantity
+       FROM shipment_items si JOIN products p ON p.id=si.product_id
+       WHERE si.shipment_id=$1 ORDER BY p.name`,
+      [shipment.id],
+    );
+    response.json({ shipment, events: events.rows, items: items.rows });
   }),
 );
 
@@ -167,10 +190,22 @@ router.get(
     const onlyDriver = request.user!.role === "DRIVER";
     const result = await pool.query(
       `SELECT s.*,r.name AS route,r.transport_mode,r.estimated_distance_km,
-              v.plate,v.type AS vehicle,u.full_name AS driver,
+              v.plate,v.type AS vehicle,v.last_position_at,u.full_name AS driver,
               po.code AS purchase_order_code,supplier.commercial_name AS supplier_name,
               origin_warehouse.name AS origin_warehouse_name,
               destination_warehouse.name AS destination_warehouse_name,
+              (s.status='RETRASADO' OR (s.status<>'ENTREGADO' AND s.eta_at<NOW())) AS is_delayed,
+              CASE WHEN s.status='ENTREGADO' THEN 0
+                   ELSE GREATEST(s.delay_minutes,
+                     GREATEST(ROUND(EXTRACT(EPOCH FROM (NOW()-s.eta_at))/60),0)::INTEGER)
+              END AS delay_minutes,
+              CASE
+                WHEN NOW()-COALESCE(v.last_position_at,s.updated_at) <= INTERVAL '15 minutes' THEN 'EN_VIVO'
+                WHEN NOW()-COALESCE(v.last_position_at,s.updated_at) <= INTERVAL '60 minutes' THEN 'RECIENTE'
+                ELSE 'SIN_ACTUALIZAR'
+              END AS position_state,
+              (SELECT COUNT(*)::INTEGER FROM shipment_events event
+               WHERE event.shipment_id=s.id AND event.event_type='INCIDENCIA') AS incident_count,
               json_agg(json_build_object('product_id',p.id,'sku',p.sku,'product',p.name,'quantity',si.quantity))
                 FILTER (WHERE p.id IS NOT NULL) AS items
        FROM shipments s
@@ -184,7 +219,7 @@ router.get(
        LEFT JOIN shipment_items si ON si.shipment_id=s.id
        LEFT JOIN products p ON p.id=si.product_id
        WHERE ($1::BOOLEAN=FALSE OR s.driver_id=$2)
-       GROUP BY s.id,r.name,r.transport_mode,r.estimated_distance_km,v.plate,v.type,u.full_name,
+       GROUP BY s.id,r.name,r.transport_mode,r.estimated_distance_km,v.plate,v.type,v.last_position_at,u.full_name,
                 po.code,supplier.commercial_name,origin_warehouse.name,destination_warehouse.name
        ORDER BY s.created_at DESC`,
       [onlyDriver, request.user!.id],
@@ -350,7 +385,7 @@ router.patch(
           `<p>Se le asignó el envío <strong>${shipment.tracking_code}</strong>.</p><p>${shipment.origin} → ${shipment.destination}</p>`,
         );
       }
-      emitEvent(`shipment:${shipmentId}`, "shipment:updated", updated.rows[0]);
+      emitShipmentEvent(shipmentId, "shipment:updated", updated.rows[0]);
       if (dispatchedProducts.length) {
         emitEvent("inventory", "stock:dispatched", {
           shipmentId,
@@ -375,22 +410,23 @@ router.post(
     const shipmentId = z.coerce.number().int().positive().parse(request.params.id);
     const input = z
       .object({
-        event_type: z.enum(["SALIDA", "ESCALA", "ADUANA", "INCIDENCIA", "ENTREGA", "UBICACION"]),
+        event_type: z.enum([
+          "SALIDA",
+          "ESCALA",
+          "ADUANA",
+          "INCIDENCIA",
+          "RETRASO",
+          "RESOLUCION",
+          "ENTREGA",
+          "UBICACION",
+        ]),
         description: z.string().trim().min(3).max(1000),
         latitude: z.coerce.number().min(-90).max(90),
         longitude: z.coerce.number().min(-180).max(180),
+        delay_minutes: z.coerce.number().int().min(1).max(10080).optional(),
         evidence_url: z.string().url().nullable().optional(),
       })
       .parse(request.body);
-    const statusMap = {
-      SALIDA: "EN_TRANSITO",
-      ESCALA: "EN_TRANSITO",
-      ADUANA: "EN_ADUANA",
-      INCIDENCIA: "INCIDENCIA",
-      ENTREGA: "ENTREGADO",
-      UBICACION: "EN_TRANSITO",
-    } as const;
-    const status = statusMap[input.event_type];
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
@@ -406,6 +442,20 @@ router.post(
         throw new AppError(403, "El envío no está asignado a este transportista");
       }
       if (shipment.status === "ENTREGADO") throw new AppError(409, "El envío ya fue entregado");
+      const status =
+        input.event_type === "INCIDENCIA"
+          ? "INCIDENCIA"
+          : input.event_type === "RETRASO"
+            ? "RETRASADO"
+            : input.event_type === "ADUANA"
+              ? "EN_ADUANA"
+              : input.event_type === "ENTREGA"
+                ? "ENTREGADO"
+                : input.event_type === "RESOLUCION" || input.event_type === "SALIDA"
+                  ? "EN_TRANSITO"
+                  : ["INCIDENCIA", "RETRASADO", "EN_ADUANA"].includes(shipment.status)
+                    ? shipment.status
+                    : "EN_TRANSITO";
 
       const inventoryProducts: number[] = [];
       if (input.event_type === "ENTREGA") {
@@ -471,12 +521,25 @@ router.post(
                 lng: Number(shipment.destination_longitude),
               },
             );
+      const operationalDelayMinutes =
+        input.event_type === "RETRASO"
+          ? input.delay_minutes ??
+            Math.max(
+              30,
+              Math.round(
+                Math.max(0, Date.now() - new Date(shipment.eta_at).getTime()) / 60_000,
+              ),
+            )
+          : input.event_type === "RESOLUCION" || input.event_type === "ENTREGA"
+            ? 0
+            : Number(shipment.delay_minutes ?? 0);
       const recalculatedEta =
         input.event_type === "ENTREGA"
           ? new Date()
           : new Date(
               Date.now() +
-                estimateDuration(remainingKm, String(shipment.transport_mode)) * 3_600_000,
+                estimateDuration(remainingKm, String(shipment.transport_mode)) * 3_600_000 +
+                operationalDelayMinutes * 60_000,
             );
       const event = await client.query(
         `INSERT INTO shipment_events
@@ -500,13 +563,37 @@ router.post(
           inventory_received_at=CASE
             WHEN $2::shipment_status='ENTREGADO' AND destination_warehouse_id IS NOT NULL THEN NOW()
             ELSE inventory_received_at END,
-          eta_at=$5,updated_at=NOW()
+          eta_at=$5,delay_minutes=$6,updated_at=NOW()
          WHERE id=$1 RETURNING *`,
-        [shipmentId, status, input.latitude, input.longitude, recalculatedEta],
+        [
+          shipmentId,
+          status,
+          input.latitude,
+          input.longitude,
+          recalculatedEta,
+          operationalDelayMinutes,
+        ],
       );
+      if (shipment.vehicle_id) {
+        await client.query(
+          `UPDATE vehicles
+           SET current_latitude=$2,current_longitude=$3,last_position_at=NOW(),
+               current_location=$4
+           WHERE id=$1`,
+          [
+            shipment.vehicle_id,
+            input.latitude,
+            input.longitude,
+            `${Number(input.latitude).toFixed(4)}, ${Number(input.longitude).toFixed(4)}`,
+          ],
+        );
+      }
       await audit(request, { action: "SHIPMENT_EVENT", entityType: "shipment", entityId: shipmentId, details: { status } }, client);
       await client.query("COMMIT");
-      emitEvent(`shipment:${shipmentId}`, "shipment:event", event.rows[0]);
+      emitShipmentEvent(shipmentId, "shipment:event", {
+        ...event.rows[0],
+        shipment: updated.rows[0],
+      });
       if (inventoryProducts.length) {
         emitEvent("inventory", "stock:received", {
           shipmentId,

@@ -1,5 +1,6 @@
 import { ClipboardPlus, Edit3, LocateFixed, Plus, RotateCcw, Send, Settings2, Trash2, Truck } from "lucide-react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { io } from "socket.io-client";
 import { api, getErrorMessage } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Alert, EmptyState, LoadingState, Modal, PageHeader, StatusBadge, formatDate } from "../components/ui";
@@ -13,6 +14,8 @@ interface Shipment {
   purchase_order_code: string | null; supplier_name: string | null;
   origin_warehouse_name: string | null; destination_warehouse_name: string | null;
   inventory_reserved_at: string | null; inventory_dispatched_at: string | null; inventory_received_at: string | null;
+  last_position_at: string | null; position_state: "EN_VIVO" | "RECIENTE" | "SIN_ACTUALIZAR";
+  is_delayed: boolean; delay_minutes: number; incident_count: number;
   items: Array<{ product_id: number; sku: string; product: string; quantity: number }>;
 }
 interface Vehicle { id: number; plate: string; type: string; transport_mode: string; capacity_kg: number; capacity_m3: number; current_location: string; active: boolean; available: boolean }
@@ -57,6 +60,16 @@ export function ShipmentsPage() {
   }, [can]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const socket = io(import.meta.env.VITE_SOCKET_URL || window.location.origin, {
+      auth: { rooms: ["shipments"] },
+    });
+    const refresh = () => void load();
+    socket.on("shipment:created", refresh);
+    socket.on("shipment:updated", refresh);
+    socket.on("shipment:event", refresh);
+    return () => { socket.disconnect(); };
+  }, [load]);
 
   return <>
     <PageHeader title="Asignación y seguimiento" subtitle={user?.role === "DRIVER" ? "Envíos asignados a su operación" : "Vehículos, transportistas y estado de los envíos"} actions={
@@ -66,9 +79,10 @@ export function ShipmentsPage() {
     {loading ? <LoadingState /> : shipments.length === 0 ? <EmptyState title="No hay envíos disponibles" /> : <div className="shipments-board">{shipments.map((shipment) => <article className="card shipment-card" key={shipment.id}>
       <div className="shipment-card-top"><div className={`transport-symbol ${shipment.transport_mode.toLowerCase()}`}><Truck size={19}/></div><div><span>{shipment.tracking_code}</span><strong>{shipment.origin} → {shipment.destination}</strong></div><StatusBadge status={shipment.status}/></div>
       <div className={`shipment-flow ${shipment.flow_type === "ENTRADA_COMPRA" ? "inbound" : "outbound"}`}><strong>{shipment.flow_type === "ENTRADA_COMPRA" ? "ENTRADA · COMPRA" : "SALIDA · DISTRIBUCIÓN"}</strong><span>{shipment.flow_type === "ENTRADA_COMPRA" ? `Recogida desde ${shipment.supplier_name ?? shipment.origin}; llega a ${shipment.destination_warehouse_name ?? shipment.destination} y aumenta inventario al entregarse.` : `Sale de ${shipment.origin_warehouse_name ?? shipment.origin}; el inventario se descuenta al asignar el transporte${shipment.destination_warehouse_name ? ` y aumenta en ${shipment.destination_warehouse_name} al entregarse` : ""}.`}</span></div>
+      {(shipment.status === "INCIDENCIA" || shipment.is_delayed) && <div className={`shipment-ops-alert ${shipment.status === "INCIDENCIA" ? "incident" : "delay"}`}><strong>{shipment.status === "INCIDENCIA" ? "Incidencia activa" : "Retraso detectado"}</strong><span>{shipment.status === "INCIDENCIA" ? `${shipment.incident_count} incidencia(s) registrada(s)` : `${shipment.delay_minutes} min sobre la ETA`}</span></div>}
       <div className="shipment-progress"><span className="complete"/><i className={shipment.status !== "PREPARANDO" ? "complete" : ""}/><i className={["EN_ADUANA","ENTREGADO"].includes(shipment.status) ? "complete" : ""}/><span className={shipment.status === "ENTREGADO" ? "complete" : ""}/></div>
       <div className="shipment-stages"><span>Preparando</span><span>En tránsito</span><span>Aduana</span><span>Entregado</span></div>
-      <div className="shipment-details"><div><small>Vehículo</small><strong>{shipment.plate ?? "Sin asignar"}</strong></div><div><small>Transportista</small><strong>{shipment.driver ?? "Sin asignar"}</strong></div><div><small>ETA</small><strong>{formatDate(shipment.eta_at, true)}</strong></div><div><small>Carga</small><strong>{shipment.total_weight_kg} kg</strong></div></div>
+      <div className="shipment-details"><div><small>Vehículo</small><strong>{shipment.plate ?? "Sin asignar"}</strong></div><div><small>Transportista</small><strong>{shipment.driver ?? "Sin asignar"}</strong></div><div><small>ETA</small><strong>{formatDate(shipment.eta_at, true)}</strong></div><div><small>Posición</small><strong>{shipment.position_state?.replaceAll("_", " ") ?? "SIN ACTUALIZAR"}</strong></div></div>
       <div className="shipment-items">{shipment.purchase_order_id && <span>{shipment.purchase_order_code ?? `Compra #${shipment.purchase_order_id}`}</span>}{shipment.items?.map((item) => <span key={item.product_id}>{item.sku} · {item.quantity}</span>)}</div>
       <footer><a className="button" href={`/rastreo/${shipment.tracking_code}`}><LocateFixed size={14}/> Ver rastreo</a>
         {shipment.status === "PREPARANDO" && can("shipments.assign") && <button className="button primary" onClick={() => setAssigning(shipment)}><Truck size={14}/> Asignar transporte</button>}
@@ -91,11 +105,24 @@ function AssignModal({ shipment, open, vehicles, drivers, onClose, onSaved }: { 
 }
 
 function EventModal({ shipment, open, onClose, onSaved }: { shipment: Shipment | null; open: boolean; onClose: () => void; onSaved: () => Promise<void> }) {
-  const [form, setForm] = useState({ event_type: "UBICACION", description: "Actualización de ubicación", latitude: shipment?.current_latitude ?? -16.5, longitude: shipment?.current_longitude ?? -68.15, evidence_url: "" });
+  const [form, setForm] = useState({ event_type: "UBICACION", description: "Actualización de ubicación", latitude: shipment?.current_latitude ?? -16.5, longitude: shipment?.current_longitude ?? -68.15, delay_minutes: 60, evidence_url: "" });
   const [error, setError] = useState("");
   useEffect(() => { if (shipment) setForm((current) => ({ ...current, latitude: Number(shipment.current_latitude), longitude: Number(shipment.current_longitude) })); }, [shipment]);
   const submit = async (event: FormEvent) => { event.preventDefault(); if (!shipment) return; try { await api.post(`/transporte/envios/${shipment.id}/eventos`, { ...form, latitude: Number(form.latitude), longitude: Number(form.longitude), evidence_url: form.evidence_url || null }); await onSaved(); } catch (cause) { setError(getErrorMessage(cause)); } };
-  return <Modal open={open} onClose={onClose} title={`Actualizar · ${shipment?.tracking_code ?? ""}`} width="620px">{error && <Alert>{error}</Alert>}<form onSubmit={submit}><div className="form-grid"><label className="field full"><span>Evento *</span><select value={form.event_type} onChange={(event) => setForm({ ...form, event_type: event.target.value })}><option value="UBICACION">Ubicación</option><option value="ESCALA">Escala</option><option value="ADUANA">Aduana</option><option value="INCIDENCIA">Incidencia</option><option value="ENTREGA">Entrega</option></select></label><label className="field"><span>Latitud *</span><input type="number" step="any" value={form.latitude} onChange={(event) => setForm({ ...form, latitude: Number(event.target.value) })}/></label><label className="field"><span>Longitud *</span><input type="number" step="any" value={form.longitude} onChange={(event) => setForm({ ...form, longitude: Number(event.target.value) })}/></label><label className="field full"><span>Descripción *</span><textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} required/></label><label className="field full"><span>URL de evidencia</span><input type="url" value={form.evidence_url} onChange={(event) => setForm({ ...form, evidence_url: event.target.value })}/></label></div><div className="form-actions"><button type="button" className="button" onClick={onClose}>Cancelar</button><button className="button primary">Publicar actualización</button></div></form></Modal>;
+  return <Modal open={open} onClose={onClose} title={`Actualizar · ${shipment?.tracking_code ?? ""}`} width="620px">
+    {error && <Alert>{error}</Alert>}
+    <form onSubmit={submit}>
+      <div className="form-grid">
+        <label className="field full"><span>Evento *</span><select value={form.event_type} onChange={(event) => setForm({ ...form, event_type: event.target.value })}><option value="UBICACION">Ubicación</option><option value="ESCALA">Escala</option><option value="ADUANA">Aduana</option><option value="INCIDENCIA">Incidencia</option><option value="RETRASO">Retraso</option><option value="RESOLUCION">Resolución de alerta</option><option value="ENTREGA">Entrega</option></select><small className="hint">Ubicación y escala conservan una incidencia, retraso o aduana activos. Use “Resolución de alerta” cuando la operación esté normalizada.</small></label>
+        {form.event_type === "RETRASO" && <label className="field full"><span>Demora estimada (minutos) *</span><input type="number" min="1" max="10080" value={form.delay_minutes} onChange={(event) => setForm({ ...form, delay_minutes: Number(event.target.value) })}/><small className="hint">Se conserva durante las actualizaciones de posición y se incorpora a la nueva ETA.</small></label>}
+        <label className="field"><span>Latitud *</span><input type="number" step="any" value={form.latitude} onChange={(event) => setForm({ ...form, latitude: Number(event.target.value) })}/></label>
+        <label className="field"><span>Longitud *</span><input type="number" step="any" value={form.longitude} onChange={(event) => setForm({ ...form, longitude: Number(event.target.value) })}/></label>
+        <label className="field full"><span>Descripción *</span><textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} required/></label>
+        <label className="field full"><span>URL de evidencia</span><input type="url" value={form.evidence_url} onChange={(event) => setForm({ ...form, evidence_url: event.target.value })}/></label>
+      </div>
+      <div className="form-actions"><button type="button" className="button" onClick={onClose}>Cancelar</button><button className="button primary">Publicar actualización</button></div>
+    </form>
+  </Modal>;
 }
 
 function FleetModal({ open, vehicles, onClose, onSaved }: { open: boolean; vehicles: Vehicle[]; onClose: () => void; onSaved: () => Promise<void> }) {

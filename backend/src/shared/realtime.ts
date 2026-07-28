@@ -8,5 +8,13 @@ export function registerRealtimeServer(server: Server): void {
 
 export function emitEvent(room: string, event: string, payload: unknown): void {
   io?.to(room).emit(event, payload);
-  io?.emit(event, payload);
+}
+
+export function emitShipmentEvent(
+  shipmentId: number,
+  event: string,
+  payload: unknown,
+): void {
+  emitEvent(`shipment:${shipmentId}`, event, payload);
+  emitEvent("shipments", event, payload);
 }

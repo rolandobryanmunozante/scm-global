@@ -30,7 +30,7 @@ otra ruta con origen y destino intercambiados.
 | Compras | Proveedores, calificaciones, creación y aprobación de órdenes. | Recibir stock, crear rutas o asignar camiones. |
 | Inventario | Productos, almacenes, recepciones, movimientos y transferencias. | Aprobar compras o administrar transporte. |
 | Logística | Rutas, envíos, flota, capacidad y asignación de conductores. | Modificar órdenes o ajustar stock manualmente. |
-| Transportista | Ver sus envíos y reportar ubicación, aduana, incidencia y entrega. | Ver envíos ajenos o asignarse un vehículo. |
+| Transportista | Ver sus envíos y reportar ubicación, aduana, retraso, incidencia, resolución y entrega. | Ver envíos ajenos o asignarse un vehículo. |
 | Gerencia | Dashboard, reportes, trazabilidad y auditoría. | Modificar la operación. |
 | Proveedor | Ver únicamente sus órdenes, confirmar fecha y documento. | Ver inventario, otros proveedores o flota interna. |
 | Auditor | Reportes, exportaciones, trazabilidad y bitácora. | Crear o modificar datos operativos. |

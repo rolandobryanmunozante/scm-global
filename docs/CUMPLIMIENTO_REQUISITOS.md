@@ -24,14 +24,14 @@ Esta matriz contrasta el documento **Sistema Global de Gestión de la Cadena de 
 | HU-05 | Órdenes de compra automáticas | Cumple | Detección de mínimos, proveedor por categoría/calificación, cantidad sugerida, aprobación y notificación. |
 | HU-06 | Planificación de rutas | Cumple | Origen, destino, escala, modo, distancia, duración, mapa, aduana, edición y baja lógica. |
 | HU-07 | Asignación de transporte | Cumple | Compatibilidad de capacidad/modo, licencia vigente, conflictos de vehículo/conductor y notificación. |
-| HU-08 | Rastreo en tiempo real | Cumple | Código público, eventos, ubicación, evidencia, Socket.IO, historial y recálculo de ETA. |
+| HU-08 | Rastreo en tiempo real | Cumple | Buscador público, carga, eventos, ubicación, frescura, evidencia, Socket.IO, historial y recálculo de ETA. |
 | HU-09 | Autenticación y acceso por roles | Cumple | bcrypt 12, JWT de 30 minutos, inactividad, refresco activo, bloqueo, recuperación, revocación y permisos actuales consultados en base. |
 | HU-10 | Dashboard global | Cumple | Seis KPI, tres gráficos, país/categoría/fechas y actualización cada diez minutos. |
 | HU-11 | Incumplimiento de proveedores | Cumple | Detección programada/manual, notificación interna/correo y penalización registrada en evaluación. |
 | HU-12 | Transferencias de stock | Cumple | Salida en origen, estado en tránsito, recepción en destino y doble movimiento trazable. |
 | HU-13 | Integración con aduanas | Pendiente externo | Se detecta cruce internacional y se alerta que requiere aduana; no se simula una API gubernamental inexistente. |
 | HU-14 | Aplicación móvil para transportistas | Parcial | Vista web adaptable y restringida al conductor; no existe aplicación nativa ni operación offline. |
-| HU-15 | Mapa global de envíos | Cumple | Envíos activos, estado, ubicación, conductor, vehículo y búsqueda sobre mapa. |
+| HU-15 | Mapa global de envíos | Cumple | Torre de control con envíos activos, telemetría, carga, retrasos, incidencias, conductor, vehículo y búsqueda sobre mapa. |
 | HU-16 | Exportación PDF y Excel | Cumple | Exportaciones filtradas; XLSX válido con resumen/detalle y PDF paginado. |
 | HU-17 | Portal de proveedores | Cumple | Aislamiento por proveedor, órdenes propias, fecha comprometida y documento. |
 | HU-18 | Multimoneda | Pendiente | El modelo actual opera en bolivianos; requiere fuente de tipos de cambio y reglas contables. |
