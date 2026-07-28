@@ -18,7 +18,7 @@ if (-not (Test-Path -LiteralPath ".env")) {
 }
 
 Write-Host "Construyendo e iniciando SCM Global..."
-docker compose up -d --build
+docker compose up -d --build --wait
 if ($LASTEXITCODE -ne 0) {
   throw "Docker Compose no pudo iniciar el sistema."
 }

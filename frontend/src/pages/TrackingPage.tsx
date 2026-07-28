@@ -1,10 +1,11 @@
-import { ArrowRight, Boxes, CalendarClock, CheckCircle2, CircleDot, Globe2, MapPin, PackageSearch, Truck } from "lucide-react";
+import { ArrowRight, Boxes, CalendarClock, CheckCircle2, CircleDot, Globe2, LogOut, MapPin, PackageSearch, Truck } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { CircleMarker, MapContainer, Popup, TileLayer } from "react-leaflet";
-import { useNavigate, useParams } from "react-router-dom";
 import { io } from "socket.io-client";
 import { api, getErrorMessage } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
 import { Alert, LoadingState, StatusBadge, formatDate } from "../components/ui";
+import { useNavigate, useParams } from "../router";
 
 interface TrackingData {
   shipment: {
@@ -19,6 +20,7 @@ interface TrackingData {
 const steps = ["PREPARANDO", "EN_TRANSITO", "EN_ADUANA", "ENTREGADO"];
 
 export function TrackingPage() {
+  const { user, logout } = useAuth();
   const { code } = useParams();
   const navigate = useNavigate();
   const [query, setQuery] = useState(code ?? "SCM-BO-2026-001");
@@ -43,7 +45,7 @@ export function TrackingPage() {
   const activeStep = data ? Math.max(0, steps.indexOf(data.shipment.status === "INCIDENCIA" || data.shipment.status === "RETRASADO" ? "EN_TRANSITO" : data.shipment.status)) : 0;
 
   return <div className="tracking-page">
-    <header className="tracking-header"><a href="/" className="tracking-brand"><div className="brand-mark"><Boxes size={20}/></div><div><strong>SCM Global</strong><span>Rastreo público</span></div></a><div className="public-secure"><Globe2 size={15}/> Consulta segura · Sin inicio de sesión</div></header>
+    <header className="tracking-header"><a href="/" className="tracking-brand"><div className="brand-mark"><Boxes size={20}/></div><div><strong>SCM Global</strong><span>Rastreo público</span></div></a><div className="public-secure"><Globe2 size={15}/> {user ? `Sesión: ${user.fullName}` : "Consulta segura · Sin inicio de sesión"}{user && <button className="icon-button" title="Cerrar sesión" onClick={logout}><LogOut size={14}/></button>}</div></header>
     <main className="tracking-main">
       <section className="tracking-hero"><span>VISIBILIDAD DE EXTREMO A EXTREMO</span><h1>¿Dónde está su envío?</h1><p>Ingrese el código único para consultar ubicación, ETA e historial de eventos en tiempo real.</p>
         <form className="tracking-search" onSubmit={submit}><PackageSearch size={20}/><input value={query} onChange={(event) => setQuery(event.target.value.toUpperCase())} placeholder="Ej. SCM-BO-2026-001"/><button>Rastrear <ArrowRight size={16}/></button></form>

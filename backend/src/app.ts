@@ -14,6 +14,7 @@ import { errorHandler } from "./shared/errors.js";
 
 export const app = express();
 
+app.set("trust proxy", "loopback, linklocal, uniquelocal");
 app.disable("x-powered-by");
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(

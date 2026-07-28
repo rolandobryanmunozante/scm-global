@@ -31,18 +31,20 @@ export function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [country, setCountry] = useState("");
   const [categoryId, setCategoryId] = useState("");
+  const [from, setFrom] = useState(`${new Date().getFullYear()}-01-01`);
+  const [to, setTo] = useState(new Date().toISOString().slice(0, 10));
 
   const load = useCallback(async () => {
     setError("");
     try {
-      const response = await api.get<DashboardData>("/reportes/dashboard", { params: { country: country || undefined, categoryId: categoryId || undefined } });
+      const response = await api.get<DashboardData>("/reportes/dashboard", { params: { from: from || undefined, to: to || undefined, country: country || undefined, categoryId: categoryId || undefined } });
       setData(response.data);
     } catch (cause) {
       setError(getErrorMessage(cause));
     } finally {
       setLoading(false);
     }
-  }, [country, categoryId]);
+  }, [country, categoryId, from, to]);
 
   useEffect(() => {
     void load();
@@ -56,6 +58,8 @@ export function DashboardPage() {
     <>
       <PageHeader title={t("pages.dashboard")} subtitle={t("pages.dashboardSubtitle")} actions={
         <>
+          <input className="header-select" type="date" aria-label="Desde" value={from} onChange={(event) => setFrom(event.target.value)} />
+          <input className="header-select" type="date" aria-label="Hasta" min={from} value={to} onChange={(event) => setTo(event.target.value)} />
           <select className="header-select" value={country} onChange={(event) => setCountry(event.target.value)}>
             <option value="">Todos los países</option><option>Bolivia</option><option>Perú</option><option>Brasil</option><option>Argentina</option>
           </select>
@@ -69,7 +73,7 @@ export function DashboardPage() {
       {data && (
         <>
           <section className="kpi-grid">
-            <KpiCard label="Ventas del mes" value={formatMoney(data.kpis.monthlySales)} icon={CircleDollarSign} tone="blue" trend="+12.4%" />
+            <KpiCard label="Ventas del período" value={formatMoney(data.kpis.monthlySales)} icon={CircleDollarSign} tone="blue" trend={`${from} → ${to}`} />
             <KpiCard label="Valor de inventario" value={formatMoney(data.kpis.inventoryValue)} icon={Boxes} tone="violet" trend="+3.2%" />
             <KpiCard label="Envíos activos" value={String(data.kpis.activeShipments)} icon={Truck} tone="green" trend="En ruta" />
             <KpiCard label="Envíos retrasados" value={String(data.kpis.delayedShipments)} icon={AlertTriangle} tone="red" trend={data.kpis.delayedShipments ? "Requiere atención" : "Sin alertas"} />

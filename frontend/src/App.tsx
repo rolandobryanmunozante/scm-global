@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth/AuthContext";
 import { LoadingState } from "./components/ui";
 import { AppLayout } from "./layout/AppLayout";
@@ -16,31 +15,63 @@ import { SupplierPortalPage } from "./pages/SupplierPortalPage";
 import { SuppliersPage } from "./pages/SuppliersPage";
 import { TrackingPage } from "./pages/TrackingPage";
 import { UsersPage } from "./pages/UsersPage";
+import {
+  BrowserRouter,
+  Navigate,
+  RouteParams,
+  matchRoute,
+  useLocation,
+} from "./router";
 
 export function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/rastreo" element={<TrackingPage />} />
-        <Route path="/rastreo/:code" element={<TrackingPage />} />
-        <Route element={<Protected><AppLayout /></Protected>}>
-          <Route index element={<HomeRoute />} />
-          <Route path="/proveedores" element={<Permission permission="suppliers.read"><SuppliersPage /></Permission>} />
-          <Route path="/inventario" element={<Permission permission="inventory.read"><InventoryPage /></Permission>} />
-          <Route path="/ordenes" element={<Permission permission="purchases.read"><PurchaseOrdersPage /></Permission>} />
-          <Route path="/rutas" element={<Permission permission="routes.manage"><RoutesPage /></Permission>} />
-          <Route path="/envios" element={<Permission permission="shipments.read"><ShipmentsPage /></Permission>} />
-          <Route path="/mapa-global" element={<Permission permission="shipments.read"><GlobalMapPage /></Permission>} />
-          <Route path="/reportes" element={<Permission permission="reports.read"><ReportsPage /></Permission>} />
-          <Route path="/usuarios" element={<Permission permission="users.manage"><UsersPage /></Permission>} />
-          <Route path="/portal-proveedor" element={<Role role="SUPPLIER"><Permission permission="supplier.portal"><SupplierPortalPage /></Permission></Role>} />
-          <Route path="/notificaciones" element={<NotificationsPage />} />
-        </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <AppRoutes />
     </BrowserRouter>
   );
+}
+
+function AppRoutes() {
+  const { pathname } = useLocation();
+  if (pathname === "/login") return <LoginPage />;
+  if (pathname === "/rastreo") return <TrackingPage />;
+
+  const tracking = matchRoute("/rastreo/:code", pathname);
+  if (tracking.matched) {
+    return (
+      <RouteParams params={tracking.params}>
+        <TrackingPage />
+      </RouteParams>
+    );
+  }
+
+  const protectedPage = resolveProtectedPage(pathname);
+  return (
+    <Protected>
+      {protectedPage ? <AppLayout>{protectedPage}</AppLayout> : <Navigate to="/" replace />}
+    </Protected>
+  );
+}
+
+function resolveProtectedPage(pathname: string): ReactNode | null {
+  const routes: Record<string, ReactNode> = {
+    "/": <HomeRoute />,
+    "/proveedores": <Permission permission="suppliers.read"><SuppliersPage /></Permission>,
+    "/inventario": <Permission permission="inventory.read"><InventoryPage /></Permission>,
+    "/ordenes": <Permission permission="purchases.read"><PurchaseOrdersPage /></Permission>,
+    "/rutas": <Permission permission="routes.manage"><RoutesPage /></Permission>,
+    "/envios": <Permission permission="shipments.read"><ShipmentsPage /></Permission>,
+    "/mapa-global": <Permission permission="shipments.read"><GlobalMapPage /></Permission>,
+    "/reportes": <Permission permission="reports.read"><ReportsPage /></Permission>,
+    "/usuarios": <Permission permission="users.manage"><UsersPage /></Permission>,
+    "/portal-proveedor": (
+      <Role role="SUPPLIER">
+        <Permission permission="supplier.portal"><SupplierPortalPage /></Permission>
+      </Role>
+    ),
+    "/notificaciones": <NotificationsPage />,
+  };
+  return routes[pathname] ?? null;
 }
 
 function Protected({ children }: { children: ReactNode }) {
@@ -64,6 +95,7 @@ function HomeRoute() {
   if (can("reports.read")) return <DashboardPage />;
   if (can("supplier.portal")) return <Navigate to="/portal-proveedor" replace />;
   if (can("shipments.read")) return <Navigate to="/envios" replace />;
+  if (can("tracking.read")) return <Navigate to="/rastreo" replace />;
   if (can("inventory.read")) return <Navigate to="/inventario" replace />;
   if (can("suppliers.read")) return <Navigate to="/proveedores" replace />;
   return <Navigate to="/notificaciones" replace />;

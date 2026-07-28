@@ -1,6 +1,81 @@
 import type { PoolClient } from "pg";
 import { pool } from "../../shared/db.js";
+import { AppError } from "../../shared/errors.js";
 import { sendMail } from "../../shared/mailer.js";
+
+export async function receivePurchaseOrder(
+  client: PoolClient,
+  orderId: number,
+  warehouseId: number,
+  userId: number,
+): Promise<{ order: Record<string, unknown>; productIds: number[] }> {
+  const orderResult = await client.query(
+    `SELECT po.*,s.active AS supplier_active
+     FROM purchase_orders po JOIN suppliers s ON s.id=po.supplier_id
+     WHERE po.id=$1 FOR UPDATE OF po`,
+    [orderId],
+  );
+  const order = orderResult.rows[0];
+  if (!order) throw new AppError(404, "Orden de compra no encontrada");
+  if (order.status === "RECIBIDA") {
+    throw new AppError(409, "La orden de compra ya fue recibida");
+  }
+  if (!["APROBADA", "ENVIADA", "CONFIRMADA"].includes(String(order.status))) {
+    throw new AppError(409, "La orden debe estar aprobada o confirmada para recibirla");
+  }
+  const warehouse = await client.query("SELECT id FROM warehouses WHERE id=$1 AND active", [warehouseId]);
+  if (!warehouse.rowCount) throw new AppError(400, "El almacén de recepción no existe o está inactivo");
+
+  const items = await client.query(
+    "SELECT product_id,quantity FROM purchase_order_items WHERE purchase_order_id=$1 ORDER BY product_id",
+    [orderId],
+  );
+  if (!items.rowCount) throw new AppError(409, "La orden no contiene productos");
+
+  const productIds: number[] = [];
+  for (const item of items.rows) {
+    await client.query(
+      `INSERT INTO stocks(product_id,warehouse_id,current_quantity)
+       VALUES($1,$2,0) ON CONFLICT(product_id,warehouse_id) DO NOTHING`,
+      [item.product_id, warehouseId],
+    );
+    const stockResult = await client.query(
+      "SELECT * FROM stocks WHERE product_id=$1 AND warehouse_id=$2 FOR UPDATE",
+      [item.product_id, warehouseId],
+    );
+    const stock = stockResult.rows[0];
+    const resulting = Number(stock.current_quantity) + Number(item.quantity);
+    await client.query("UPDATE stocks SET current_quantity=$2,updated_at=NOW() WHERE id=$1", [
+      stock.id,
+      resulting,
+    ]);
+    await client.query(
+      `INSERT INTO inventory_movements
+       (product_id,warehouse_id,user_id,movement_type,reason,quantity,previous_quantity,
+        resulting_quantity,reference_type,reference_id,observations)
+       VALUES($1,$2,$3,'ENTRADA','COMPRA',$4,$5,$6,'purchase_order',$7,$8)`,
+      [
+        item.product_id,
+        warehouseId,
+        userId,
+        item.quantity,
+        stock.current_quantity,
+        resulting,
+        orderId,
+        `Recepción de la orden ${order.code}`,
+      ],
+    );
+    productIds.push(Number(item.product_id));
+  }
+
+  const updated = await client.query(
+    `UPDATE purchase_orders
+     SET status='RECIBIDA',received_by=$2,received_at=NOW(),received_warehouse_id=$3,updated_at=NOW()
+     WHERE id=$1 RETURNING *`,
+    [orderId, userId, warehouseId],
+  );
+  return { order: updated.rows[0], productIds };
+}
 
 export async function generateAutomaticPurchaseOrders(): Promise<number> {
   const client = await pool.connect();
@@ -85,7 +160,9 @@ export async function generateAutomaticPurchaseOrders(): Promise<number> {
   if (generated > 0) {
     const managers = await pool.query(
       `SELECT u.email FROM users u JOIN roles r ON r.id=u.role_id
-       WHERE r.code='PURCHASE_MANAGER' AND u.active`,
+       LEFT JOIN notification_preferences np
+         ON np.user_id=u.id AND np.event_code='AUTO_PURCHASE_ORDER'
+       WHERE r.code='PURCHASE_MANAGER' AND u.active AND COALESCE(np.email_enabled,TRUE)`,
     );
     await Promise.allSettled(
       managers.rows.map((manager) =>
@@ -145,6 +222,22 @@ export async function checkLatePurchaseOrders(): Promise<number> {
   } finally {
     client.release();
   }
+  if (notified > 0) {
+    const managers = await pool.query(
+      `SELECT u.email FROM users u JOIN roles r ON r.id=u.role_id
+       LEFT JOIN notification_preferences np ON np.user_id=u.id AND np.event_code='LATE_ORDER'
+       WHERE r.code='PURCHASE_MANAGER' AND u.active AND COALESCE(np.email_enabled,TRUE)`,
+    );
+    await Promise.allSettled(
+      managers.rows.map((manager) =>
+        sendMail(
+          manager.email,
+          "Órdenes de compra con retraso",
+          `<p>Se detectaron <strong>${notified}</strong> órdenes que superaron su fecha comprometida. Revise el panel de compras.</p>`,
+        ),
+      ),
+    );
+  }
   return notified;
 }
 
@@ -159,7 +252,9 @@ async function notifyRole(
     `INSERT INTO notifications (user_id, title, message, channel, event_code)
      SELECT u.id, $2, $3, 'APP', $4
      FROM users u JOIN roles r ON r.id=u.role_id
-     WHERE r.code=$1 AND u.active`,
-    [roleCode, title, message, eventCode],
+     LEFT JOIN notification_preferences np
+       ON np.user_id=u.id AND np.event_code=$5
+     WHERE r.code=$1 AND u.active AND COALESCE(np.app_enabled,TRUE)`,
+    [roleCode, title, message, eventCode, eventCode.split(":")[0]],
   );
 }

@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
 import { asyncHandler } from "../../shared/async-handler.js";
@@ -5,37 +6,206 @@ import { authenticate, requirePermission } from "../../shared/auth.js";
 import { audit } from "../../shared/audit.js";
 import { pool } from "../../shared/db.js";
 import { AppError } from "../../shared/errors.js";
+import { sendMail } from "../../shared/mailer.js";
 import { emitEvent } from "../../shared/realtime.js";
 import {
   checkLatePurchaseOrders,
   generateAutomaticPurchaseOrders,
+  receivePurchaseOrder,
 } from "./inventarios.service.js";
 
 const router = Router();
 router.use(authenticate);
 
+const productSchema = z
+  .object({
+    sku: z.string().trim().min(2).max(40),
+    name: z.string().trim().min(2).max(150),
+    category_id: z.coerce.number().int().positive(),
+    unit_of_measure: z.string().trim().min(1).max(30),
+    minimum_stock: z.coerce.number().int().min(0),
+    maximum_stock: z.coerce.number().int().positive(),
+    unit_price: z.coerce.number().min(0),
+  })
+  .refine((value) => value.maximum_stock >= value.minimum_stock, {
+    message: "El stock máximo debe ser mayor o igual al mínimo",
+    path: ["maximum_stock"],
+  });
+
+const warehouseSchema = z.object({
+  code: z.string().trim().min(2).max(20),
+  name: z.string().trim().min(2).max(120),
+  city: z.string().trim().min(2).max(80),
+  country: z.string().trim().min(2).max(80),
+  address: z.string().trim().min(2).max(500),
+  latitude: z.coerce.number().min(-90).max(90).nullable().optional(),
+  longitude: z.coerce.number().min(-180).max(180).nullable().optional(),
+});
+
 router.get(
   "/productos",
   requirePermission("inventory.read"),
   asyncHandler(async (request, response) => {
-    const search = z.string().trim().max(100).default("").parse(request.query.search);
+    const query = z
+      .object({
+        search: z.string().trim().max(100).default(""),
+        active: z.enum(["true", "false", "all"]).default("true"),
+      })
+      .parse(request.query);
     const result = await pool.query(
       `SELECT p.*, c.name AS category
        FROM products p JOIN categories c ON c.id=p.category_id
-       WHERE p.active AND ($1='' OR p.sku ILIKE '%'||$1||'%' OR p.name ILIKE '%'||$1||'%' OR c.name ILIKE '%'||$1||'%')
+       WHERE ($2='all' OR p.active=($2='true'))
+         AND ($1='' OR p.sku ILIKE '%'||$1||'%' OR p.name ILIKE '%'||$1||'%' OR c.name ILIKE '%'||$1||'%')
        ORDER BY p.name LIMIT 100`,
-      [search],
+      [query.search, query.active],
     );
     response.json(result.rows);
+  }),
+);
+
+router.post(
+  "/productos",
+  requirePermission("inventory.catalog"),
+  asyncHandler(async (request, response) => {
+    const input = productSchema.parse(request.body);
+    const result = await pool.query(
+      `INSERT INTO products
+       (sku,name,category_id,unit_of_measure,minimum_stock,maximum_stock,unit_price)
+       VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [
+        input.sku,
+        input.name,
+        input.category_id,
+        input.unit_of_measure,
+        input.minimum_stock,
+        input.maximum_stock,
+        input.unit_price,
+      ],
+    );
+    await audit(request, {
+      action: "CREATE",
+      entityType: "product",
+      entityId: result.rows[0].id,
+    });
+    response.status(201).json(result.rows[0]);
+  }),
+);
+
+router.put(
+  "/productos/:id",
+  requirePermission("inventory.catalog"),
+  asyncHandler(async (request, response) => {
+    const id = z.coerce.number().int().positive().parse(request.params.id);
+    const input = productSchema.parse(request.body);
+    const result = await pool.query(
+      `UPDATE products SET sku=$2,name=$3,category_id=$4,unit_of_measure=$5,
+         minimum_stock=$6,maximum_stock=$7,unit_price=$8,updated_at=NOW()
+       WHERE id=$1 RETURNING *`,
+      [
+        id,
+        input.sku,
+        input.name,
+        input.category_id,
+        input.unit_of_measure,
+        input.minimum_stock,
+        input.maximum_stock,
+        input.unit_price,
+      ],
+    );
+    if (!result.rowCount) throw new AppError(404, "Producto no encontrado");
+    await audit(request, { action: "UPDATE", entityType: "product", entityId: id });
+    response.json(result.rows[0]);
+  }),
+);
+
+router.patch(
+  "/productos/:id/estado",
+  requirePermission("inventory.catalog"),
+  asyncHandler(async (request, response) => {
+    const id = z.coerce.number().int().positive().parse(request.params.id);
+    const { active } = z.object({ active: z.boolean() }).parse(request.body);
+    const result = await pool.query(
+      "UPDATE products SET active=$2,updated_at=NOW() WHERE id=$1 RETURNING id,active",
+      [id, active],
+    );
+    if (!result.rowCount) throw new AppError(404, "Producto no encontrado");
+    await audit(request, {
+      action: active ? "REACTIVATE" : "DEACTIVATE",
+      entityType: "product",
+      entityId: id,
+    });
+    response.json(result.rows[0]);
   }),
 );
 
 router.get(
   "/almacenes",
   requirePermission("inventory.read"),
-  asyncHandler(async (_request, response) => {
-    const result = await pool.query("SELECT * FROM warehouses WHERE active ORDER BY name");
+  asyncHandler(async (request, response) => {
+    const active = z.enum(["true", "false", "all"]).default("true").parse(request.query.active);
+    const result = await pool.query(
+      "SELECT * FROM warehouses WHERE ($1='all' OR active=($1='true')) ORDER BY name",
+      [active],
+    );
     response.json(result.rows);
+  }),
+);
+
+router.post(
+  "/almacenes",
+  requirePermission("inventory.catalog"),
+  asyncHandler(async (request, response) => {
+    const input = warehouseSchema.parse(request.body);
+    const result = await pool.query(
+      `INSERT INTO warehouses(code,name,city,country,address,latitude,longitude)
+       VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [input.code, input.name, input.city, input.country, input.address, input.latitude ?? null, input.longitude ?? null],
+    );
+    await audit(request, {
+      action: "CREATE",
+      entityType: "warehouse",
+      entityId: result.rows[0].id,
+    });
+    response.status(201).json(result.rows[0]);
+  }),
+);
+
+router.put(
+  "/almacenes/:id",
+  requirePermission("inventory.catalog"),
+  asyncHandler(async (request, response) => {
+    const id = z.coerce.number().int().positive().parse(request.params.id);
+    const input = warehouseSchema.parse(request.body);
+    const result = await pool.query(
+      `UPDATE warehouses
+       SET code=$2,name=$3,city=$4,country=$5,address=$6,latitude=$7,longitude=$8
+       WHERE id=$1 RETURNING *`,
+      [id, input.code, input.name, input.city, input.country, input.address, input.latitude ?? null, input.longitude ?? null],
+    );
+    if (!result.rowCount) throw new AppError(404, "Almacén no encontrado");
+    await audit(request, { action: "UPDATE", entityType: "warehouse", entityId: id });
+    response.json(result.rows[0]);
+  }),
+);
+
+router.patch(
+  "/almacenes/:id/estado",
+  requirePermission("inventory.catalog"),
+  asyncHandler(async (request, response) => {
+    const id = z.coerce.number().int().positive().parse(request.params.id);
+    const { active } = z.object({ active: z.boolean() }).parse(request.body);
+    const result = await pool.query(
+      "UPDATE warehouses SET active=$2 WHERE id=$1 RETURNING id,active",
+      [id, active],
+    );
+    if (!result.rowCount) throw new AppError(404, "Almacén no encontrado");
+    await audit(request, {
+      action: active ? "REACTIVATE" : "DEACTIVATE",
+      entityType: "warehouse",
+      entityId: id,
+    });
+    response.json(result.rows[0]);
   }),
 );
 
@@ -363,19 +533,193 @@ router.get(
 );
 
 router.post(
+  "/ordenes-compra",
+  requirePermission("purchases.write"),
+  asyncHandler(async (request, response) => {
+    const input = z
+      .object({
+        supplier_id: z.coerce.number().int().positive(),
+        expected_delivery_date: z.string().date().optional(),
+        notes: z.string().trim().max(1000).nullable().optional(),
+        items: z
+          .array(
+            z.object({
+              product_id: z.coerce.number().int().positive(),
+              quantity: z.coerce.number().int().positive(),
+            }),
+          )
+          .min(1)
+          .max(100),
+      })
+      .refine(
+        (value) => new Set(value.items.map((item) => item.product_id)).size === value.items.length,
+        { message: "No puede repetir productos en la misma orden", path: ["items"] },
+      )
+      .parse(request.body);
+    if (
+      input.expected_delivery_date &&
+      new Date(`${input.expected_delivery_date}T00:00:00`) < new Date(new Date().toDateString())
+    ) {
+      throw new AppError(400, "La fecha de entrega no puede estar en el pasado");
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const supplier = await client.query(
+        "SELECT id,category_id FROM suppliers WHERE id=$1 AND active FOR SHARE",
+        [input.supplier_id],
+      );
+      if (!supplier.rowCount) throw new AppError(400, "El proveedor no existe o está inactivo");
+      const products = await client.query(
+        `SELECT id,unit_price,category_id FROM products
+         WHERE id=ANY($1::BIGINT[]) AND active`,
+        [input.items.map((item) => item.product_id)],
+      );
+      if (products.rowCount !== input.items.length) {
+        throw new AppError(400, "Uno o más productos no existen o están inactivos");
+      }
+      if (
+        products.rows.some(
+          (product) => Number(product.category_id) !== Number(supplier.rows[0].category_id),
+        )
+      ) {
+        throw new AppError(400, "Los productos deben pertenecer a la categoría del proveedor");
+      }
+      const priceByProduct = new Map(
+        products.rows.map((product) => [Number(product.id), Number(product.unit_price)]),
+      );
+      const code = `OC-${new Date().getUTCFullYear()}-${Date.now().toString(36).toUpperCase()}${randomBytes(2).toString("hex").toUpperCase()}`;
+      const order = await client.query(
+        `INSERT INTO purchase_orders
+         (code,supplier_id,generated_by,expected_delivery_date,notes,automatic)
+         VALUES($1,$2,$3,$4,$5,FALSE) RETURNING *`,
+        [
+          code,
+          input.supplier_id,
+          request.user!.id,
+          input.expected_delivery_date ?? null,
+          input.notes ?? null,
+        ],
+      );
+      for (const item of input.items) {
+        await client.query(
+          `INSERT INTO purchase_order_items(purchase_order_id,product_id,quantity,unit_price)
+           VALUES($1,$2,$3,$4)`,
+          [order.rows[0].id, item.product_id, item.quantity, priceByProduct.get(item.product_id)],
+        );
+      }
+      await audit(
+        request,
+        {
+          action: "CREATE",
+          entityType: "purchase_order",
+          entityId: order.rows[0].id,
+          details: { automatic: false, itemCount: input.items.length },
+        },
+        client,
+      );
+      await client.query("COMMIT");
+      response.status(201).json(order.rows[0]);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }),
+);
+
+router.post(
   "/ordenes-compra/:id/aprobar",
   requirePermission("purchases.approve"),
   asyncHandler(async (request, response) => {
     const id = z.coerce.number().int().positive().parse(request.params.id);
-    const result = await pool.query(
-      `UPDATE purchase_orders
-       SET status='APROBADA',approved_by=$2,approved_at=NOW()
-       WHERE id=$1 AND status='BORRADOR' RETURNING *`,
-      [id, request.user!.id],
-    );
-    if (!result.rowCount) throw new AppError(409, "La orden no está en estado borrador");
-    await audit(request, { action: "APPROVE", entityType: "purchase_order", entityId: id });
-    response.json(result.rows[0]);
+    const client = await pool.connect();
+    let supplierEmail = "";
+    try {
+      await client.query("BEGIN");
+      const result = await client.query(
+        `UPDATE purchase_orders
+         SET status='APROBADA',approved_by=$2,approved_at=NOW(),updated_at=NOW()
+         WHERE id=$1 AND status='BORRADOR' RETURNING *`,
+        [id, request.user!.id],
+      );
+      if (!result.rowCount) throw new AppError(409, "La orden no está en estado borrador");
+      const supplier = await client.query(
+        `SELECT s.email,s.commercial_name
+         FROM suppliers s JOIN purchase_orders po ON po.supplier_id=s.id WHERE po.id=$1`,
+        [id],
+      );
+      supplierEmail = String(supplier.rows[0]?.email ?? "");
+      await client.query(
+        `INSERT INTO notifications(user_id,title,message,event_code)
+         SELECT u.id,'Nueva orden aprobada',$2,$3
+         FROM users u WHERE u.supplier_id=$1 AND u.active`,
+        [
+          result.rows[0].supplier_id,
+          `La orden ${result.rows[0].code} está lista para confirmación`,
+          `PURCHASE_APPROVED:${id}`,
+        ],
+      );
+      await audit(
+        request,
+        { action: "APPROVE", entityType: "purchase_order", entityId: id },
+        client,
+      );
+      await client.query("COMMIT");
+      if (supplierEmail) {
+        await sendMail(
+          supplierEmail,
+          `Orden de compra ${result.rows[0].code}`,
+          `<p>La orden <strong>${result.rows[0].code}</strong> fue aprobada y está disponible en el portal de proveedores.</p>`,
+        );
+      }
+      response.json(result.rows[0]);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }),
+);
+
+router.post(
+  "/ordenes-compra/:id/recibir",
+  requirePermission("purchases.receive"),
+  asyncHandler(async (request, response) => {
+    const orderId = z.coerce.number().int().positive().parse(request.params.id);
+    const { warehouse_id } = z
+      .object({ warehouse_id: z.coerce.number().int().positive() })
+      .parse(request.body);
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await receivePurchaseOrder(client, orderId, warehouse_id, request.user!.id);
+      await audit(
+        request,
+        {
+          action: "RECEIVE",
+          entityType: "purchase_order",
+          entityId: orderId,
+          details: { warehouseId: warehouse_id, productIds: result.productIds },
+        },
+        client,
+      );
+      await client.query("COMMIT");
+      emitEvent("inventory", "purchase:received", {
+        orderId,
+        warehouseId: warehouse_id,
+        productIds: result.productIds,
+      });
+      response.json(result.order);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }),
 );
 

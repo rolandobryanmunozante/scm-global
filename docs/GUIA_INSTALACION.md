@@ -61,6 +61,8 @@ Variables disponibles:
 | `POSTGRES_USER` | Usuario de PostgreSQL | `scm_user` |
 | `POSTGRES_PASSWORD` | Contraseña de PostgreSQL | `scm_password` |
 | `POSTGRES_PORT` | Puerto local de PostgreSQL | `5435` |
+| `BACKEND_PORT` | Puerto local directo de la API | `4000` |
+| `WEB_PORT` | Puerto local de la aplicación | `8080` |
 | `JWT_SECRET` | Firma de los tokens de acceso | Debe cambiarse en producción |
 | `WEB_ORIGIN` | Orígenes permitidos para CORS y Socket.IO | Frontend local |
 | `SMTP_HOST` | Servidor de correo opcional | Vacío |
@@ -101,7 +103,7 @@ Compruebe el estado:
 docker compose ps
 ```
 
-Los servicios `scm-postgres`, `scm-backend` y `scm-frontend` deben indicar `healthy`.
+Los servicios `postgres`, `backend` y `frontend` deben indicar `healthy`. `migrate` debe aparecer como terminado correctamente (`Exited (0)`).
 
 ## 5. Acceder
 
@@ -274,9 +276,16 @@ docker compose logs --tail 200 postgres
 docker compose logs --tail 200 frontend
 ```
 
-### Cambié una migración pero no se ejecutó
+### Agregué una migración pero no se ejecutó
 
-Las migraciones del directorio `database/migrations` se ejecutan automáticamente únicamente cuando PostgreSQL crea un volumen vacío. En desarrollo puede reinicializar con `docker compose down -v`; en producción debe aplicar una migración incremental y conservar una copia de seguridad.
+Cada archivo nuevo de `database/migrations` debe tener un prefijo numérico superior y no debe reutilizar el nombre de una migración aplicada. El servicio `migrate` lo ejecuta en el siguiente `docker compose up`. Consulte:
+
+```bash
+docker compose logs migrate
+docker compose exec -T postgres psql -U scm_user -d scm_global -c "TABLE schema_migrations"
+```
+
+No edite una migración aplicada ni use `down -v` durante una actualización normal.
 
 ### No llegan correos
 

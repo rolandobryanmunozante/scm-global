@@ -1,10 +1,10 @@
 import { Boxes, Eye, EyeOff, Globe2, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { Navigate } from "react-router-dom";
 import { api, getErrorMessage } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Alert, Modal } from "../components/ui";
+import { Navigate } from "../router";
 
 export function LoginPage() {
   const { t, i18n } = useTranslation();

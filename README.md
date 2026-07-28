@@ -1,8 +1,9 @@
 # SCM Global
 
-Sistema web integral de gestión de la cadena de suministro, implementado de acuerdo con el alcance MVP del documento **Proyecto final taller**.
+Sistema web integral de gestión de la cadena de suministro, implementado y auditado contra el documento **Sistema Global de Gestión de la Cadena de Suministro**.
 
 La [guía completa de instalación, operación y despliegue](docs/GUIA_INSTALACION.md) incluye instrucciones para Windows, Linux, macOS y servidores con HTTPS.
+La [matriz de cumplimiento](docs/CUMPLIMIENTO_REQUISITOS.md) relaciona las 25 historias con su evidencia y límites, y la [arquitectura de datos](docs/ARQUITECTURA_Y_DATOS.md) describe los flujos transaccionales.
 
 ## Arranque rápido con Docker
 
@@ -32,7 +33,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-La primera ejecución construye las imágenes, crea el esquema de PostgreSQL y carga los datos demostrativos. Las siguientes ejecuciones conservan la información en un volumen.
+La primera ejecución construye las imágenes, crea el esquema de PostgreSQL y carga los datos demostrativos. En cada arranque, el servicio `migrate` aplica únicamente migraciones pendientes; las siguientes ejecuciones conservan la información.
 
 Accesos:
 
@@ -67,14 +68,15 @@ Cambie `JWT_SECRET` y las contraseñas de `.env` antes de un despliegue público
 
 ## Servicios Docker
 
-| Contenedor | Tecnología | Puerto |
+| Servicio | Tecnología | Puerto |
 |---|---|---|
-| `scm-frontend` | React 19, Vite, Tailwind y Nginx | `8080` |
-| `scm-backend` | Node.js, Express, Socket.IO | `4000` |
-| `scm-postgres` | PostgreSQL 16 | `5435` |
+| `frontend` | React 19, Vite, Tailwind y Nginx | `8080` |
+| `backend` | Node.js, Express, Socket.IO | `4000` |
+| `migrate` | Ejecutor incremental de SQL | Sin puerto |
+| `postgres` | PostgreSQL 16 | `5435` |
 
-Los tres servicios tienen comprobaciones de salud. El backend espera a PostgreSQL y el frontend espera al backend antes de iniciar.
-La API y PostgreSQL se enlazan solamente a la interfaz local del servidor; el único punto que necesita publicación es el puerto `8080`, que redirige internamente tanto REST como Socket.IO.
+Los tres servicios permanentes tienen comprobaciones de salud. El backend espera la migración y el frontend espera al backend.
+En la configuración local, frontend, API y PostgreSQL se enlazan solamente a `127.0.0.1`. Para publicar el sistema se coloca un proxy HTTPS delante del puerto web.
 
 Comandos operativos:
 
@@ -115,15 +117,16 @@ Luego apunte el proxy HTTPS del servidor al puerto `8080`. El frontend usa rutas
 
 - Autenticación JWT, recuperación de contraseña, sesiones, permisos y nueve perfiles de acceso.
 - Gestión, evaluación y portal de proveedores.
-- Productos, almacenes, stock, alertas de mínimos, movimientos, transferencias y trazabilidad por lote.
-- Órdenes de compra con recepción y actualización automática del inventario.
+- CRUD lógico de productos, almacenes, rutas, vehículos y proveedores.
+- Stock, reservas, alertas de mínimos, movimientos, transferencias y trazabilidad por producto.
+- Órdenes manuales/automáticas, aprobación, confirmación del proveedor, recepción y actualización transaccional del inventario.
 - Planificación visual de rutas con Leaflet y OpenStreetMap.
 - Creación de envíos, asignación compatible de vehículo/transportista y notificaciones.
 - Seguimiento público con código único, ubicación, ETA, evidencia e historial en tiempo real.
 - Mapa global de embarques.
 - Dashboard con KPIs, filtros y gráficos.
 - Reportes PDF y Excel.
-- Auditoría de acciones, configuración de parámetros e idiomas español, inglés y portugués.
+- Auditoría de acciones, preferencias de notificación e infraestructura parcial de idiomas español, inglés y portugués.
 - Interfaz adaptable a escritorio, tableta y móvil.
 
 El PDF identifica como fuera del MVP las integraciones aduaneras externas, aplicación móvil nativa, multimoneda, predicción por aprendizaje automático, simulaciones, integración con ERP y huella de carbono. Se respetó esa delimitación.
@@ -134,8 +137,9 @@ Las migraciones se ejecutan automáticamente en una base nueva:
 
 - `database/migrations/001_schema.sql`: extensiones, tipos, tablas, restricciones, índices y disparadores.
 - `database/migrations/002_seed.sql`: roles, permisos, usuarios y datos demostrativos.
+- `database/migrations/003_integrity_workflows.sql`: recepción, revocación, relaciones de almacenes y permisos granulares.
 
-La información persiste en el volumen `scm_postgres_data`, administrado por Docker Compose y normalmente prefijado con el nombre de la carpeta del proyecto.
+`database/migrate.sh` registra cada archivo aplicado en `schema_migrations`. La información persiste en el volumen `scm_postgres_data`, normalmente prefijado con el nombre del proyecto Compose.
 
 ## Desarrollo y validación
 
@@ -148,6 +152,16 @@ pnpm dev
 ```
 
 `pnpm check` ejecuta verificación TypeScript, pruebas automatizadas y compilaciones de producción de backend y frontend.
+
+En una instalación Docker descartable:
+
+```powershell
+pnpm verify:system
+pnpm verify:workflows
+docker compose exec -T postgres psql -U scm_user -d scm_global -v ON_ERROR_STOP=1 -f /database/verify.sql
+```
+
+`verify:workflows` crea registros de prueba; no se recomienda ejecutarlo sobre producción.
 
 Estructura:
 

@@ -18,11 +18,11 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { NavLink, useLocation } from "../router";
 
 interface NavItem {
   to: string;
@@ -32,7 +32,7 @@ interface NavItem {
   roles?: string[];
 }
 
-export function AppLayout() {
+export function AppLayout({ children }: { children: ReactNode }) {
   const { t, i18n } = useTranslation();
   const { user, logout, can } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
@@ -213,7 +213,7 @@ export function AppLayout() {
           </div>
         </header>
         <main className="content-area">
-          <Outlet />
+          {children}
         </main>
         <footer className="app-footer">
           <span>SCM Global v1.0</span>
