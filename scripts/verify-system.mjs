@@ -75,6 +75,12 @@ for (const expected of roles) {
 
   const allowed = await request(expected.allowed, { token: login.body.token });
   assert.equal(allowed.status, 200, `${expected.role}: ${expected.allowed} respondió ${allowed.status}`);
+  if (login.body.user.permissions.includes("reports.read")) {
+    const filters = await request("/reportes/filtros", { token: login.body.token });
+    assert.equal(filters.status, 200, `${expected.role}: no pudo cargar filtros de reportes`);
+    assert.ok(filters.body.suppliers instanceof Array, `${expected.role}: proveedores de reporte inválidos`);
+    assert.ok(filters.body.products instanceof Array, `${expected.role}: productos de reporte inválidos`);
+  }
   if (expected.forbidden) {
     const forbidden = await request(expected.forbidden, { token: login.body.token });
     assert.equal(

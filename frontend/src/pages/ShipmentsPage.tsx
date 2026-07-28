@@ -6,18 +6,21 @@ import { Alert, EmptyState, LoadingState, Modal, PageHeader, StatusBadge, format
 
 interface Shipment {
   id: number; tracking_code: string; origin: string; destination: string; status: string;
+  flow_type: "ENTRADA_COMPRA" | "SALIDA_DISTRIBUCION";
   total_weight_kg: number; total_volume_m3: number; current_latitude: number; current_longitude: number;
   eta_at: string | null; route: string; transport_mode: string; plate: string | null; vehicle: string | null; driver: string | null;
   purchase_order_id: number | null; origin_warehouse_id: number | null; destination_warehouse_id: number | null;
+  purchase_order_code: string | null; supplier_name: string | null;
+  origin_warehouse_name: string | null; destination_warehouse_name: string | null;
   inventory_reserved_at: string | null; inventory_dispatched_at: string | null; inventory_received_at: string | null;
   items: Array<{ product_id: number; sku: string; product: string; quantity: number }>;
 }
 interface Vehicle { id: number; plate: string; type: string; transport_mode: string; capacity_kg: number; capacity_m3: number; current_location: string; active: boolean; available: boolean }
 interface Driver { id: number; full_name: string; email: string; license_number: string; license_expiry: string; license_valid: boolean; available: boolean }
-interface RouteData { id: number; name: string; origin_name: string; destination_name: string; transport_mode: string; origin_warehouse_id: number | null; destination_warehouse_id: number | null }
+interface RouteData { id: number; name: string; origin_name: string; destination_name: string; transport_mode: string; purpose: "ENTRADA_COMPRA" | "SALIDA_DISTRIBUCION" | "AMBOS"; origin_warehouse_id: number | null; destination_warehouse_id: number | null }
 interface Product { id: number; sku: string; name: string }
 interface Warehouse { id: number; code: string; name: string }
-interface PurchaseOrder { id: number; code: string; supplier: string; status: string; items: Array<{ product_id: number; sku: string; product: string; quantity: number }> }
+interface PurchaseOrder { id: number; code: string; supplier: string; status: string; shipment_id: number | null; items: Array<{ product_id: number; sku: string; product: string; quantity: number }> }
 
 export function ShipmentsPage() {
   const { can, user } = useAuth();
@@ -62,10 +65,11 @@ export function ShipmentsPage() {
     {error && <Alert>{error}</Alert>}{message && <Alert type="success">{message}</Alert>}
     {loading ? <LoadingState /> : shipments.length === 0 ? <EmptyState title="No hay envíos disponibles" /> : <div className="shipments-board">{shipments.map((shipment) => <article className="card shipment-card" key={shipment.id}>
       <div className="shipment-card-top"><div className={`transport-symbol ${shipment.transport_mode.toLowerCase()}`}><Truck size={19}/></div><div><span>{shipment.tracking_code}</span><strong>{shipment.origin} → {shipment.destination}</strong></div><StatusBadge status={shipment.status}/></div>
+      <div className={`shipment-flow ${shipment.flow_type === "ENTRADA_COMPRA" ? "inbound" : "outbound"}`}><strong>{shipment.flow_type === "ENTRADA_COMPRA" ? "ENTRADA · COMPRA" : "SALIDA · DISTRIBUCIÓN"}</strong><span>{shipment.flow_type === "ENTRADA_COMPRA" ? `Recogida desde ${shipment.supplier_name ?? shipment.origin}; llega a ${shipment.destination_warehouse_name ?? shipment.destination} y aumenta inventario al entregarse.` : `Sale de ${shipment.origin_warehouse_name ?? shipment.origin}; el inventario se descuenta al asignar el transporte${shipment.destination_warehouse_name ? ` y aumenta en ${shipment.destination_warehouse_name} al entregarse` : ""}.`}</span></div>
       <div className="shipment-progress"><span className="complete"/><i className={shipment.status !== "PREPARANDO" ? "complete" : ""}/><i className={["EN_ADUANA","ENTREGADO"].includes(shipment.status) ? "complete" : ""}/><span className={shipment.status === "ENTREGADO" ? "complete" : ""}/></div>
       <div className="shipment-stages"><span>Preparando</span><span>En tránsito</span><span>Aduana</span><span>Entregado</span></div>
       <div className="shipment-details"><div><small>Vehículo</small><strong>{shipment.plate ?? "Sin asignar"}</strong></div><div><small>Transportista</small><strong>{shipment.driver ?? "Sin asignar"}</strong></div><div><small>ETA</small><strong>{formatDate(shipment.eta_at, true)}</strong></div><div><small>Carga</small><strong>{shipment.total_weight_kg} kg</strong></div></div>
-      <div className="shipment-items">{shipment.purchase_order_id && <span>Compra #{shipment.purchase_order_id}</span>}{shipment.items?.map((item) => <span key={item.product_id}>{item.sku} · {item.quantity}</span>)}</div>
+      <div className="shipment-items">{shipment.purchase_order_id && <span>{shipment.purchase_order_code ?? `Compra #${shipment.purchase_order_id}`}</span>}{shipment.items?.map((item) => <span key={item.product_id}>{item.sku} · {item.quantity}</span>)}</div>
       <footer><a className="button" href={`/rastreo/${shipment.tracking_code}`}><LocateFixed size={14}/> Ver rastreo</a>
         {shipment.status === "PREPARANDO" && can("shipments.assign") && <button className="button primary" onClick={() => setAssigning(shipment)}><Truck size={14}/> Asignar transporte</button>}
         {can("shipments.update") && shipment.status !== "ENTREGADO" && <button className="button primary" onClick={() => setUpdating(shipment)}><Send size={14}/> Actualizar estado</button>}
@@ -105,21 +109,47 @@ function FleetModal({ open, vehicles, onClose, onSaved }: { open: boolean; vehic
 }
 
 function CreateShipmentModal({ open, routes, products, warehouses, purchaseOrders, onClose, onSaved }: { open: boolean; routes: RouteData[]; products: Product[]; warehouses: Warehouse[]; purchaseOrders: PurchaseOrder[]; onClose: () => void; onSaved: () => Promise<void> }) {
-  const [form, setForm] = useState({ mode: "DISTRIBUCION", route_id: "", purchase_order_id: "", origin_warehouse_id: "", destination_warehouse_id: "", product_id: "", quantity: 1, total_weight_kg: 1000, total_volume_m3: 5 }); const [error, setError] = useState("");
-  const eligibleOrders = purchaseOrders.filter((order) => ["APROBADA","ENVIADA","CONFIRMADA"].includes(order.status));
+  const [form, setForm] = useState({ mode: "DISTRIBUCION", route_id: "", purchase_order_id: "", origin_warehouse_id: "", destination_warehouse_id: "", product_id: "", quantity: 1, total_weight_kg: 1000, total_volume_m3: 5 });
+  const [error, setError] = useState("");
+  const inbound = form.mode === "COMPRA";
+  const eligibleOrders = purchaseOrders.filter((order) => !order.shipment_id && ["APROBADA", "ENVIADA", "CONFIRMADA"].includes(order.status));
+  const compatibleRoutes = routes.filter((route) => route.purpose === "AMBOS" || route.purpose === (inbound ? "ENTRADA_COMPRA" : "SALIDA_DISTRIBUCION"));
+  const selectedRoute = routes.find((route) => route.id === Number(form.route_id));
+
+  const changeMode = (mode: string) => {
+    setForm((current) => ({
+      ...current,
+      mode,
+      route_id: "",
+      purchase_order_id: "",
+      origin_warehouse_id: "",
+      destination_warehouse_id: "",
+      product_id: "",
+    }));
+    setError("");
+  };
+
   const changeRoute = (routeId: string) => {
     const route = routes.find((item) => item.id === Number(routeId));
     setForm((current) => ({
       ...current,
       route_id: routeId,
-      origin_warehouse_id: route?.origin_warehouse_id ? String(route.origin_warehouse_id) : current.origin_warehouse_id,
-      destination_warehouse_id: route?.destination_warehouse_id ? String(route.destination_warehouse_id) : current.destination_warehouse_id,
+      origin_warehouse_id:
+        current.mode === "COMPRA"
+          ? ""
+          : route?.origin_warehouse_id
+            ? String(route.origin_warehouse_id)
+            : "",
+      destination_warehouse_id: route?.destination_warehouse_id
+        ? String(route.destination_warehouse_id)
+        : "",
     }));
   };
+
   const submit = async (event: FormEvent) => {
-    event.preventDefault(); setError("");
+    event.preventDefault();
+    setError("");
     try {
-      const inbound = form.mode === "COMPRA";
       await api.post("/logistica/envios", {
         route_id: Number(form.route_id),
         purchase_order_id: inbound ? Number(form.purchase_order_id) : null,
@@ -130,9 +160,34 @@ function CreateShipmentModal({ open, routes, products, warehouses, purchaseOrder
         items: inbound ? [] : [{ product_id: Number(form.product_id), quantity: Number(form.quantity) }],
       });
       await onSaved();
-    } catch (cause) { setError(getErrorMessage(cause)); }
+    } catch (cause) {
+      setError(getErrorMessage(cause));
+    }
   };
-  return <Modal open={open} onClose={onClose} title="Crear envío" width="700px">{error && <Alert>{error}</Alert>}<form onSubmit={submit}><div className="form-grid"><label className="field full"><span>Tipo de flujo *</span><select value={form.mode} onChange={(event) => setForm({ ...form, mode: event.target.value, purchase_order_id: "", product_id: "" })}><option value="DISTRIBUCION">Salida / distribución desde inventario</option><option value="COMPRA">Entrada de una orden de compra</option></select></label><label className="field full"><span>Ruta *</span><select value={form.route_id} onChange={(event) => changeRoute(event.target.value)} required><option value="">Seleccione…</option>{routes.map((route) => <option key={route.id} value={route.id}>{route.name} · {route.transport_mode}</option>)}</select></label>
-    {form.mode === "COMPRA" ? <label className="field full"><span>Orden de compra aprobada *</span><select value={form.purchase_order_id} onChange={(event) => setForm({ ...form, purchase_order_id: event.target.value })} required><option value="">Seleccione…</option>{eligibleOrders.map((order) => <option key={order.id} value={order.id}>{order.code} · {order.supplier} · {order.items.length} producto(s)</option>)}</select></label> : <><label className="field"><span>Almacén de origen *</span><select value={form.origin_warehouse_id} onChange={(event) => setForm({ ...form, origin_warehouse_id: event.target.value })} required><option value="">Seleccione…</option>{warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.code} · {warehouse.name}</option>)}</select></label><label className="field"><span>Producto *</span><select value={form.product_id} onChange={(event) => setForm({ ...form, product_id: event.target.value })} required><option value="">Seleccione…</option>{products.map((product) => <option key={product.id} value={product.id}>{product.sku} · {product.name}</option>)}</select></label><label className="field"><span>Cantidad *</span><input type="number" min="1" value={form.quantity} onChange={(event) => setForm({ ...form, quantity: Number(event.target.value) })}/></label></>}
-    <label className="field"><span>Almacén de destino {form.mode === "COMPRA" ? "*" : "(opcional)"}</span><select value={form.destination_warehouse_id} onChange={(event) => setForm({ ...form, destination_warehouse_id: event.target.value })} required={form.mode === "COMPRA"}><option value="">Sin almacén / cliente final</option>{warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.code} · {warehouse.name}</option>)}</select></label><label className="field"><span>Peso total (kg) *</span><input type="number" min="1" value={form.total_weight_kg} onChange={(event) => setForm({ ...form, total_weight_kg: Number(event.target.value) })}/></label><label className="field"><span>Volumen total (m³) *</span><input type="number" min=".1" step=".1" value={form.total_volume_m3} onChange={(event) => setForm({ ...form, total_volume_m3: Number(event.target.value) })}/></label></div><Alert type="warning">{form.mode === "COMPRA" ? "Los productos se tomarán de la orden y se sumarán al inventario al registrar la entrega." : "El stock se reservará ahora y se descontará cuando se asigne el transporte."}</Alert><div className="form-actions"><button type="button" className="button" onClick={onClose}>Cancelar</button><button className="button primary"><ClipboardPlus size={14}/> Crear envío</button></div></form></Modal>;
+
+  return <Modal open={open} onClose={onClose} title="Crear envío" width="740px">
+    {error && <Alert>{error}</Alert>}
+    <form onSubmit={submit}>
+      <div className={`flow-choice ${inbound ? "inbound" : "outbound"}`}>
+        <strong>{inbound ? "Este camión viene hacia nosotros" : "Este camión sale desde nosotros"}</strong>
+        <span>{inbound ? "Recoge la compra en el origen de la ruta y la entrega en el almacén receptor. El inventario aumenta al confirmar la entrega." : "Toma productos de un almacén propio. El stock se reserva al crear y se descuenta al asignar el transporte."}</span>
+      </div>
+      <div className="form-grid">
+        <label className="field full"><span>Tipo de flujo *</span><select value={form.mode} onChange={(event) => changeMode(event.target.value)}><option value="DISTRIBUCION">Salida de distribución · sale de nuestro almacén</option><option value="COMPRA">Entrada de compra · llega a nuestro almacén</option></select></label>
+        <label className="field full"><span>Ruta compatible *</span><select value={form.route_id} onChange={(event) => changeRoute(event.target.value)} required><option value="">Seleccione origen → destino…</option>{compatibleRoutes.map((route) => <option key={route.id} value={route.id}>{route.origin_name} → {route.destination_name} · {route.transport_mode} · {route.purpose === "AMBOS" ? "uso mixto" : inbound ? "entrada" : "salida"}</option>)}</select><small className="hint">La flecha indica exactamente desde dónde sale y a dónde llega el vehículo.</small></label>
+        {selectedRoute && <div className="selected-route full"><div><small>SALE DE</small><strong>{selectedRoute.origin_name}</strong></div><span>→</span><div><small>LLEGA A</small><strong>{selectedRoute.destination_name}</strong></div></div>}
+        {inbound ? <label className="field full"><span>Orden de compra aprobada *</span><select value={form.purchase_order_id} onChange={(event) => setForm({ ...form, purchase_order_id: event.target.value })} required><option value="">Seleccione orden y proveedor…</option>{eligibleOrders.map((order) => <option key={order.id} value={order.id}>{order.code} · {order.supplier} · {order.items.length} producto(s)</option>)}</select><small className="hint">Los productos y cantidades se copian de esta orden; no se escriben manualmente.</small></label> : <>
+          <label className="field"><span>Almacén del que sale *</span><select value={form.origin_warehouse_id} onChange={(event) => setForm({ ...form, origin_warehouse_id: event.target.value })} required><option value="">Seleccione…</option>{warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.code} · {warehouse.name}</option>)}</select></label>
+          <label className="field"><span>Producto a despachar *</span><select value={form.product_id} onChange={(event) => setForm({ ...form, product_id: event.target.value })} required><option value="">Seleccione…</option>{products.map((product) => <option key={product.id} value={product.id}>{product.sku} · {product.name}</option>)}</select></label>
+          <label className="field"><span>Cantidad *</span><input type="number" min="1" value={form.quantity} onChange={(event) => setForm({ ...form, quantity: Number(event.target.value) })}/></label>
+        </>}
+        <label className="field"><span>{inbound ? "Almacén que recibe *" : "Destino en inventario (opcional)"}</span><select value={form.destination_warehouse_id} onChange={(event) => setForm({ ...form, destination_warehouse_id: event.target.value })} required={inbound}><option value="">{inbound ? "Seleccione almacén receptor…" : "Cliente final / no ingresa a almacén"}</option>{warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.code} · {warehouse.name}</option>)}</select></label>
+        <label className="field"><span>Peso total (kg) *</span><input type="number" min="1" value={form.total_weight_kg} onChange={(event) => setForm({ ...form, total_weight_kg: Number(event.target.value) })}/></label>
+        <label className="field"><span>Volumen total (m³) *</span><input type="number" min=".1" step=".1" value={form.total_volume_m3} onChange={(event) => setForm({ ...form, total_volume_m3: Number(event.target.value) })}/></label>
+      </div>
+      {!compatibleRoutes.length && <Alert type="warning">No existe una ruta compatible. Cree primero una ruta con el propósito adecuado.</Alert>}
+      {inbound && !eligibleOrders.length && <Alert type="warning">No hay órdenes aprobadas disponibles. Compras debe crear y aprobar una orden que todavía no esté recibida ni vinculada a otro envío.</Alert>}
+      <div className="form-actions"><button type="button" className="button" onClick={onClose}>Cancelar</button><button className="button primary" disabled={!compatibleRoutes.length || (inbound && !eligibleOrders.length)}><ClipboardPlus size={14}/> Crear envío</button></div>
+    </form>
+  </Modal>;
 }

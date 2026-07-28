@@ -520,6 +520,7 @@ router.get(
   asyncHandler(async (_request, response) => {
     const result = await pool.query(
       `SELECT po.*, s.commercial_name AS supplier,
+              (SELECT sh.id FROM shipments sh WHERE sh.purchase_order_id=po.id) AS shipment_id,
               json_agg(json_build_object('product_id',p.id,'sku',p.sku,'product',p.name,'quantity',i.quantity,'unit_price',i.unit_price)) AS items,
               SUM(i.quantity*i.unit_price)::NUMERIC(16,2) AS total
        FROM purchase_orders po

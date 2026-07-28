@@ -7,6 +7,7 @@ import { GlobalMapPage } from "./pages/GlobalMapPage";
 import { InventoryPage } from "./pages/InventoryPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
+import { OperationsGuidePage } from "./pages/OperationsGuidePage";
 import { PurchaseOrdersPage } from "./pages/PurchaseOrdersPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { RoutesPage } from "./pages/RoutesPage";
@@ -70,6 +71,7 @@ function resolveProtectedPage(pathname: string): ReactNode | null {
       </Role>
     ),
     "/notificaciones": <NotificationsPage />,
+    "/guia-operativa": <OperationsGuidePage />,
   };
   return routes[pathname] ?? null;
 }
