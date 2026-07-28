@@ -2,7 +2,8 @@
 
 Este archivo es el código fuente del diagrama de la base de datos. GitHub representa
 automáticamente el bloque Mermaid como un diagrama navegable. Las relaciones reflejan
-las migraciones `001_schema.sql` y `003_integrity_workflows.sql`.
+las migraciones `001_schema.sql`, `003_integrity_workflows.sql` y
+`004_logistics_flow_semantics.sql`.
 
 ```mermaid
 erDiagram
@@ -158,6 +159,7 @@ erDiagram
         bigint created_by FK
         varchar name
         enum transport_mode
+        enum purpose
         numeric estimated_distance_km
         numeric estimated_duration_hours
         boolean customs_required
@@ -183,6 +185,7 @@ erDiagram
         bigint driver_id FK
         bigint origin_warehouse_id FK
         bigint destination_warehouse_id FK
+        enum flow_type
         enum status
         timestamptz departure_at
         timestamptz eta_at
@@ -304,6 +307,12 @@ erDiagram
 - `purchase_order_items`, `shipment_items` y `stock_transfer_items` usan claves
   compuestas para impedir repetir un producto dentro del mismo documento.
 - Una orden de compra puede originar como máximo un envío.
+- Una entrada de compra exige orden y almacén de destino, y nunca descuenta un
+  almacén de origen.
+- Una salida de distribución exige un almacén de origen y no puede vincular una
+  orden de compra.
+- Una ruta específica solo admite envíos de su propósito; `AMBOS` permite los dos
+  tipos de flujo.
 - Los movimientos de inventario y registros de auditoría son inmutables.
 - Las recepciones, reservas, despachos y entregas se ejecutan dentro de
   transacciones para mantener sincronizadas todas las tablas relacionadas.

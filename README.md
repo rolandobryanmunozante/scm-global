@@ -136,7 +136,8 @@ Luego apunte el proxy HTTPS del servidor al puerto `8080`. El frontend usa rutas
 - Stock, reservas, alertas de mínimos, movimientos, transferencias y trazabilidad por producto.
 - Órdenes manuales/automáticas, aprobación, confirmación del proveedor, recepción y actualización transaccional del inventario.
 - Planificación visual de rutas con Leaflet y OpenStreetMap.
-- Creación de envíos, asignación compatible de vehículo/transportista y notificaciones.
+- Rutas con propósito explícito de compra entrante, distribución saliente o uso mixto.
+- Creación de envíos con flujo explícito, asignación compatible de vehículo/transportista y notificaciones.
 - Seguimiento público con código único, ubicación, ETA, evidencia e historial en tiempo real.
 - Mapa global de embarques.
 - Dashboard con KPIs, filtros y gráficos.
@@ -150,12 +151,15 @@ El PDF identifica como fuera del MVP las integraciones aduaneras externas, aplic
 
 El [diagrama entidad-relación en Mermaid](docs/DIAGRAMA_BASE_DATOS.md) puede
 consultarse directamente en GitHub y se mantiene sincronizado con las migraciones.
+La [guía de roles y flujos operativos](docs/GUIA_FLUJOS_OPERATIVOS.md) explica
+quién realiza cada paso, cómo leer una ruta y qué datos deben cambiar.
 
 Las migraciones se ejecutan automáticamente en una base nueva:
 
 - `database/migrations/001_schema.sql`: extensiones, tipos, tablas, restricciones, índices y disparadores.
 - `database/migrations/002_seed.sql`: roles, permisos, usuarios y datos demostrativos.
 - `database/migrations/003_integrity_workflows.sql`: recepción, revocación, relaciones de almacenes y permisos granulares.
+- `database/migrations/004_logistics_flow_semantics.sql`: propósito de rutas, tipo de flujo de envíos y consistencia compra/distribución.
 
 `database/migrate.sh` registra cada archivo aplicado en `schema_migrations`. La información persiste en el volumen `scm_postgres_data`, normalmente prefijado con el nombre del proyecto Compose.
 

@@ -168,16 +168,24 @@ router.get(
     const result = await pool.query(
       `SELECT s.*,r.name AS route,r.transport_mode,r.estimated_distance_km,
               v.plate,v.type AS vehicle,u.full_name AS driver,
+              po.code AS purchase_order_code,supplier.commercial_name AS supplier_name,
+              origin_warehouse.name AS origin_warehouse_name,
+              destination_warehouse.name AS destination_warehouse_name,
               json_agg(json_build_object('product_id',p.id,'sku',p.sku,'product',p.name,'quantity',si.quantity))
                 FILTER (WHERE p.id IS NOT NULL) AS items
        FROM shipments s
        JOIN routes r ON r.id=s.route_id
        LEFT JOIN vehicles v ON v.id=s.vehicle_id
        LEFT JOIN users u ON u.id=s.driver_id
+       LEFT JOIN purchase_orders po ON po.id=s.purchase_order_id
+       LEFT JOIN suppliers supplier ON supplier.id=po.supplier_id
+       LEFT JOIN warehouses origin_warehouse ON origin_warehouse.id=s.origin_warehouse_id
+       LEFT JOIN warehouses destination_warehouse ON destination_warehouse.id=s.destination_warehouse_id
        LEFT JOIN shipment_items si ON si.shipment_id=s.id
        LEFT JOIN products p ON p.id=si.product_id
        WHERE ($1::BOOLEAN=FALSE OR s.driver_id=$2)
-       GROUP BY s.id,r.name,r.transport_mode,r.estimated_distance_km,v.plate,v.type,u.full_name
+       GROUP BY s.id,r.name,r.transport_mode,r.estimated_distance_km,v.plate,v.type,u.full_name,
+                po.code,supplier.commercial_name,origin_warehouse.name,destination_warehouse.name
        ORDER BY s.created_at DESC`,
       [onlyDriver, request.user!.id],
     );

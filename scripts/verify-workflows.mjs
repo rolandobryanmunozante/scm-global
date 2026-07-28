@@ -74,7 +74,101 @@ await ok("/seguridad/usuarios", {
 const driver = await login(driverEmail, driverPassword);
 
 const routes = await ok("/logistica/rutas", { token: logistics.token });
-const route = routes.find((item) => item.origin_warehouse_id && item.destination_warehouse_id);
+const inboundRoute = routes.find(
+  (item) =>
+    item.destination_warehouse_id &&
+    ["ENTRADA_COMPRA", "AMBOS"].includes(item.purpose),
+);
+assert.ok(inboundRoute, "No existe una ruta compatible con compras entrantes");
+const inboundOrder = await ok("/inventarios/ordenes-compra", {
+  method: "POST",
+  token: purchases.token,
+  expected: 201,
+  body: {
+    supplier_id: supplier.id,
+    expected_delivery_date: new Date(Date.now() + 9 * 86_400_000).toISOString().slice(0, 10),
+    notes: "Compra entrante con transporte automatizado",
+    items: [{ product_id: product.id, quantity: 3 }],
+  },
+});
+await ok(`/inventarios/ordenes-compra/${inboundOrder.id}/aprobar`, {
+  method: "POST",
+  token: purchases.token,
+});
+await ok(`/proveedores/portal/ordenes/${inboundOrder.id}`, {
+  method: "PATCH",
+  token: supplierPortal.token,
+  body: {
+    expected_delivery_date: new Date(Date.now() + 8 * 86_400_000).toISOString().slice(0, 10),
+    document_url: "https://example.com/compra-entrante.pdf",
+  },
+});
+const inboundBeforeRows = await stockAt(logistics.token, inboundRoute.destination_warehouse_id);
+const inboundBefore = warehouseStock(
+  inboundBeforeRows.find((item) => Number(item.product_id) === Number(product.id)),
+  inboundRoute.destination_warehouse_id,
+);
+const inboundShipment = await ok("/logistica/envios", {
+  method: "POST",
+  token: logistics.token,
+  expected: 201,
+  body: {
+    route_id: inboundRoute.id,
+    purchase_order_id: inboundOrder.id,
+    destination_warehouse_id: inboundRoute.destination_warehouse_id,
+    total_weight_kg: 180,
+    total_volume_m3: 1.5,
+    items: [],
+  },
+});
+assert.equal(inboundShipment.flow_type, "ENTRADA_COMPRA");
+assert.equal(inboundShipment.origin_warehouse_id, null);
+const inboundVehicles = await ok("/transporte/vehiculos", { token: logistics.token });
+const inboundVehicle = inboundVehicles.find(
+  (item) =>
+    item.available &&
+    item.active &&
+    item.transport_mode === inboundRoute.transport_mode &&
+    Number(item.capacity_kg) >= 180 &&
+    Number(item.capacity_m3) >= 1.5,
+);
+assert.ok(inboundVehicle, "No existe vehículo disponible para la compra entrante");
+await ok(`/transporte/envios/${inboundShipment.id}/asignar`, {
+  method: "PATCH",
+  token: logistics.token,
+  body: { vehicle_id: inboundVehicle.id, driver_id: driver.user.id },
+});
+await ok(`/transporte/envios/${inboundShipment.id}/eventos`, {
+  method: "POST",
+  token: driver.token,
+  expected: 201,
+  body: {
+    event_type: "ENTREGA",
+    description: "Compra recibida por la prueba integral",
+    latitude: Number(inboundRoute.destination_latitude),
+    longitude: Number(inboundRoute.destination_longitude),
+    evidence_url: "https://example.com/recepcion-compra.jpg",
+  },
+});
+const inboundAfterRows = await stockAt(logistics.token, inboundRoute.destination_warehouse_id);
+const inboundAfter = warehouseStock(
+  inboundAfterRows.find((item) => Number(item.product_id) === Number(product.id)),
+  inboundRoute.destination_warehouse_id,
+);
+assert.equal(inboundAfter.current, inboundBefore.current + 3);
+const ordersAfterInbound = await ok("/inventarios/ordenes-compra", { token: inventory.token });
+assert.equal(
+  ordersAfterInbound.find((item) => Number(item.id) === Number(inboundOrder.id)).status,
+  "RECIBIDA",
+);
+process.stdout.write("✓ compra entrante, transporte, recepción e inventario destino\n");
+
+const route = routes.find(
+  (item) =>
+    item.origin_warehouse_id &&
+    item.destination_warehouse_id &&
+    ["SALIDA_DISTRIBUCION", "AMBOS"].includes(item.purpose),
+);
 assert.ok(route, "No existe una ruta vinculada a almacenes");
 const stockBefore = await stockAt(logistics.token, route.origin_warehouse_id);
 const outboundProduct = stockBefore.find((item) => Number(item.available) >= 10);
@@ -99,6 +193,7 @@ const shipment = await ok("/logistica/envios", {
     items: [{ product_id: outboundProduct.product_id, quantity: 2 }],
   },
 });
+assert.equal(shipment.flow_type, "SALIDA_DISTRIBUCION");
 const afterReservationRows = await stockAt(logistics.token, route.origin_warehouse_id);
 const afterReservation = warehouseStock(
   afterReservationRows.find((item) => Number(item.product_id) === Number(outboundProduct.product_id)),

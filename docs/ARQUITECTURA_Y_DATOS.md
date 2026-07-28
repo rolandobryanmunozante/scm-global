@@ -57,6 +57,10 @@ warehouses ──< stock_transfers >── warehouses
 5. Al recibir/entregar, una transacción bloquea orden y stock, crea entradas por producto y marca la orden `RECIBIDA`.
 6. Un segundo intento es rechazado para impedir duplicar existencias.
 
+El envío se identifica como `flow_type=ENTRADA_COMPRA`: no tiene almacén de
+origen porque la mercadería proviene del proveedor y exige almacén receptor.
+La ruta debe tener propósito `ENTRADA_COMPRA` o `AMBOS`.
+
 ## Flujo de distribución
 
 1. Logística selecciona ruta, almacén de origen, producto y cantidad.
@@ -64,6 +68,10 @@ warehouses ──< stock_transfers >── warehouses
 3. La asignación valida vehículo, capacidad, conductor, licencia y conflictos.
 4. En la misma transacción se reducen `current_quantity` y la reserva, y se crea un movimiento `SALIDA/DESPACHO`.
 5. Los eventos recalculan ETA. Si el destino es otro almacén, la entrega crea `ENTRADA/TRASLADO_ENVIO`.
+
+El envío se identifica como `flow_type=SALIDA_DISTRIBUCION`, exige almacén de
+origen y no puede vincular una orden de compra. La ruta debe tener propósito
+`SALIDA_DISTRIBUCION` o `AMBOS`.
 
 ## Seguridad
 
@@ -84,6 +92,7 @@ warehouses ──< stock_transfers >── warehouses
 | `001_schema.sql` | Tipos, tablas, restricciones, índices, funciones, disparadores y vistas base. |
 | `002_seed.sql` | Nueve roles, permisos, usuarios y datos demostrativos. |
 | `003_integrity_workflows.sql` | Revocación de sesiones, recepción, almacenes de ruta/envío, permisos granulares e integridad adicional. |
+| `004_logistics_flow_semantics.sql` | Propósito de rutas, tipo de flujo de envíos y restricciones que separan compras entrantes de distribución saliente. |
 
 No se debe editar una migración ya aplicada en un entorno compartido. Los cambios futuros deben agregarse como `004_*.sql`, `005_*.sql`, etc.
 
@@ -99,3 +108,6 @@ docker compose exec -T postgres \
 ```
 
 `verify:system` es de solo lectura. `verify:workflows` crea datos de prueba y debe ejecutarse en una base descartable o de CI.
+
+La [guía de roles y flujos](GUIA_FLUJOS_OPERATIVOS.md) contiene ejemplos
+reproducibles y los cambios de datos esperados en cada etapa.

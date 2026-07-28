@@ -1,6 +1,7 @@
 import {
   BarChart3,
   Bell,
+  BookOpenCheck,
   Boxes,
   Building2,
   ChevronLeft,
@@ -93,6 +94,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         permissions: ["supplier.portal"],
         roles: ["SUPPLIER"],
       },
+      { to: "/guia-operativa", label: t("nav.operationsGuide"), icon: BookOpenCheck },
       { to: "/notificaciones", label: t("nav.notifications"), icon: Bell },
       { to: "/rastreo", label: t("nav.tracking"), icon: Globe2 },
     ],

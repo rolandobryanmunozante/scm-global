@@ -24,6 +24,39 @@ const filtersSchema = z
   });
 
 router.get(
+  "/filtros",
+  requirePermission("reports.read"),
+  asyncHandler(async (_request, response) => {
+    const [suppliers, products, countries] = await Promise.all([
+      pool.query(
+        `SELECT id,code,commercial_name,country
+         FROM suppliers
+         WHERE active
+         ORDER BY commercial_name`,
+      ),
+      pool.query(
+        `SELECT p.id,p.sku,p.name,c.name AS category
+         FROM products p
+         JOIN categories c ON c.id=p.category_id
+         WHERE p.active
+         ORDER BY p.name`,
+      ),
+      pool.query(
+        `SELECT DISTINCT country
+         FROM suppliers
+         WHERE active
+         ORDER BY country`,
+      ),
+    ]);
+    response.json({
+      suppliers: suppliers.rows,
+      products: products.rows,
+      countries: countries.rows.map((row) => row.country),
+    });
+  }),
+);
+
+router.get(
   "/dashboard",
   requirePermission("reports.read"),
   asyncHandler(async (request, response) => {

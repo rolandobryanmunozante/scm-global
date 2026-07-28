@@ -95,6 +95,29 @@ BEGIN
   IF violations > 0 THEN
     RAISE EXCEPTION 'Hay % envíos de compra cuyo detalle no coincide con su orden', violations;
   END IF;
+
+  SELECT COUNT(*) INTO violations
+  FROM shipments s
+  WHERE (s.flow_type='ENTRADA_COMPRA' AND (
+           s.purchase_order_id IS NULL
+           OR s.origin_warehouse_id IS NOT NULL
+           OR s.destination_warehouse_id IS NULL
+         ))
+     OR (s.flow_type='SALIDA_DISTRIBUCION' AND (
+           s.purchase_order_id IS NOT NULL
+           OR s.origin_warehouse_id IS NULL
+         ));
+  IF violations > 0 THEN
+    RAISE EXCEPTION 'Hay % envíos cuya relación compra/distribución es inconsistente', violations;
+  END IF;
+
+  SELECT COUNT(*) INTO violations
+  FROM shipments s
+  JOIN routes r ON r.id=s.route_id
+  WHERE r.purpose<>'AMBOS' AND r.purpose::TEXT<>s.flow_type::TEXT;
+  IF violations > 0 THEN
+    RAISE EXCEPTION 'Hay % envíos asociados a una ruta con propósito incompatible', violations;
+  END IF;
 END $$;
 
 SELECT
@@ -104,4 +127,6 @@ SELECT
   (SELECT COUNT(*) FROM warehouses WHERE active) AS active_warehouses,
   (SELECT COUNT(*) FROM purchase_orders) AS purchase_orders,
   (SELECT COUNT(*) FROM shipments) AS shipments,
+  (SELECT COUNT(*) FROM shipments WHERE flow_type='ENTRADA_COMPRA') AS inbound_shipments,
+  (SELECT COUNT(*) FROM shipments WHERE flow_type='SALIDA_DISTRIBUCION') AS outbound_shipments,
   (SELECT COUNT(*) FROM inventory_movements) AS inventory_movements;

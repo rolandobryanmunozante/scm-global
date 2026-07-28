@@ -23,6 +23,7 @@ const routeSchema = z.object({
   destination: coordinateSchema,
   stops: z.array(coordinateSchema).max(8).default([]),
   transport_mode: z.enum(["TERRESTRE", "MARITIMO", "AEREO"]),
+  purpose: z.enum(["ENTRADA_COMPRA", "SALIDA_DISTRIBUCION", "AMBOS"]).default("AMBOS"),
   is_template: z.boolean().default(true),
 });
 
@@ -32,7 +33,11 @@ router.get(
   asyncHandler(async (request, response) => {
     const active = z.enum(["true", "false", "all"]).default("true").parse(request.query.active);
     const result = await pool.query(
-      `SELECT r.*, u.full_name AS created_by_name
+      `SELECT r.*, u.full_name AS created_by_name,
+              (SELECT COUNT(*)::INTEGER FROM shipments s
+               WHERE s.route_id=r.id AND s.flow_type='ENTRADA_COMPRA') AS inbound_shipments,
+              (SELECT COUNT(*)::INTEGER FROM shipments s
+               WHERE s.route_id=r.id AND s.flow_type='SALIDA_DISTRIBUCION') AS outbound_shipments
        FROM routes r JOIN users u ON u.id=r.created_by
        WHERE ($1='all' OR r.active=($1='true'))
        ORDER BY r.created_at DESC`,
@@ -65,8 +70,8 @@ router.post(
         name,origin_name,origin_country,origin_latitude,origin_longitude,
         destination_name,destination_country,destination_latitude,destination_longitude,
         stops,transport_mode,estimated_distance_km,estimated_duration_hours,
-        customs_required,is_template,created_by,origin_warehouse_id,destination_warehouse_id
-       ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+        customs_required,is_template,created_by,origin_warehouse_id,destination_warehouse_id,purpose
+       ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
        RETURNING *`,
       [
         input.name,
@@ -87,6 +92,7 @@ router.post(
         request.user!.id,
         warehouseIds.origin,
         warehouseIds.destination,
+        input.purpose,
       ],
     );
     await audit(request, {
@@ -118,12 +124,25 @@ router.put(
       input.destination.country.toLowerCase(),
     ]);
     const warehouseIds = await findRouteWarehouses(input.origin, input.destination);
+    if (input.purpose !== "AMBOS") {
+      const incompatible = await pool.query(
+        "SELECT COUNT(*)::INTEGER AS total FROM shipments WHERE route_id=$1 AND flow_type::TEXT<>$2",
+        [id, input.purpose],
+      );
+      if (incompatible.rows[0].total > 0) {
+        throw new AppError(
+          409,
+          "No puede cambiar el propósito: la ruta conserva envíos históricos del otro flujo",
+        );
+      }
+    }
     const result = await pool.query(
       `UPDATE routes SET
        name=$2,origin_name=$3,origin_country=$4,origin_latitude=$5,origin_longitude=$6,
        destination_name=$7,destination_country=$8,destination_latitude=$9,destination_longitude=$10,
        stops=$11,transport_mode=$12,estimated_distance_km=$13,estimated_duration_hours=$14,
-       customs_required=$15,is_template=$16,origin_warehouse_id=$17,destination_warehouse_id=$18
+       customs_required=$15,is_template=$16,origin_warehouse_id=$17,destination_warehouse_id=$18,
+       purpose=$19
        WHERE id=$1 RETURNING *`,
       [
         id,
@@ -144,6 +163,7 @@ router.put(
         input.is_template,
         warehouseIds.origin,
         warehouseIds.destination,
+        input.purpose,
       ],
     );
     if (!result.rowCount) throw new AppError(404, "Ruta no encontrada");
@@ -163,6 +183,17 @@ router.patch(
   asyncHandler(async (request, response) => {
     const id = z.coerce.number().int().positive().parse(request.params.id);
     const { active } = z.object({ active: z.boolean() }).parse(request.body);
+    if (!active) {
+      const activeShipments = await pool.query(
+        `SELECT COUNT(*)::INTEGER AS total
+         FROM shipments
+         WHERE route_id=$1 AND status<>'ENTREGADO'`,
+        [id],
+      );
+      if (activeShipments.rows[0].total > 0) {
+        throw new AppError(409, "No puede desactivar una ruta con envíos pendientes o en tránsito");
+      }
+    }
     const result = await pool.query(
       "UPDATE routes SET active=$2 WHERE id=$1 RETURNING id,active",
       [id, active],
@@ -254,6 +285,15 @@ router.post(
       ]);
       if (!route.rowCount) throw new AppError(404, "Ruta no encontrada o inactiva");
       const routeData = route.rows[0];
+      const flowType = input.purchase_order_id ? "ENTRADA_COMPRA" : "SALIDA_DISTRIBUCION";
+      if (routeData.purpose !== "AMBOS" && routeData.purpose !== flowType) {
+        throw new AppError(
+          400,
+          flowType === "ENTRADA_COMPRA"
+            ? "La ruta seleccionada es solo para salidas; elija una ruta de llegada de compra"
+            : "La ruta seleccionada es solo para compras entrantes; elija una ruta de distribución",
+        );
+      }
       let shipmentItems = input.items;
       let originWarehouseId = input.origin_warehouse_id ?? routeData.origin_warehouse_id ?? null;
       let destinationWarehouseId =
@@ -341,8 +381,8 @@ router.post(
         `INSERT INTO shipments(
           tracking_code,route_id,purchase_order_id,origin,destination,total_weight_kg,total_volume_m3,
           current_latitude,current_longitude,eta_at,origin_warehouse_id,destination_warehouse_id,
-          inventory_reserved_at
-         ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+          inventory_reserved_at,flow_type
+         ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
         [
           code,
           input.route_id,
@@ -357,6 +397,7 @@ router.post(
           originWarehouseId,
           destinationWarehouseId,
           input.purchase_order_id ? null : new Date(),
+          flowType,
         ],
       );
       for (const item of shipmentItems) {
