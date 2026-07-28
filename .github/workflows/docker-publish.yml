@@ -1,0 +1,48 @@
+name: Publish Docker images
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    name: Publish ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: backend
+            dockerfile: backend/Dockerfile
+            image: ghcr.io/rolandobryanmunozante/scm-global-backend
+          - name: frontend
+            dockerfile: frontend/Dockerfile
+            image: ghcr.io/rolandobryanmunozante/scm-global-frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish
+        shell: bash
+        run: |
+          short_sha="${GITHUB_SHA::12}"
+          docker build \
+            --file "${{ matrix.dockerfile }}" \
+            --tag "${{ matrix.image }}:latest" \
+            --tag "${{ matrix.image }}:${short_sha}" \
+            .
+          docker push "${{ matrix.image }}:latest"
+          docker push "${{ matrix.image }}:${short_sha}"

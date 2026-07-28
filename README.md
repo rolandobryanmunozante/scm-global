@@ -26,14 +26,29 @@ Copy-Item .env.example .env
 .\iniciar-scm.ps1
 ```
 
+Para construir deliberadamente desde cambios locales use
+`.\iniciar-scm.ps1 -Build`.
+
 En Linux, macOS o cualquier sistema con Docker Compose:
 
 ```bash
 cp .env.example .env
-docker compose up -d --build
+docker compose pull
+docker compose up -d --no-build --wait
 ```
 
-La primera ejecución construye las imágenes, crea el esquema de PostgreSQL y carga los datos demostrativos. En cada arranque, el servicio `migrate` aplica únicamente migraciones pendientes; las siguientes ejecuciones conservan la información.
+Los contenedores de aplicación se descargan desde GitHub Container Registry:
+
+```text
+ghcr.io/rolandobryanmunozante/scm-global-backend:latest
+ghcr.io/rolandobryanmunozante/scm-global-frontend:latest
+```
+
+También se pueden construir desde el código fuente mediante
+`docker compose up -d --build --wait`. La primera ejecución crea el esquema de
+PostgreSQL y carga los datos demostrativos. En cada arranque, el servicio `migrate`
+aplica únicamente migraciones pendientes; las siguientes ejecuciones conservan la
+información.
 
 Accesos:
 
@@ -132,6 +147,9 @@ Luego apunte el proxy HTTPS del servidor al puerto `8080`. El frontend usa rutas
 El PDF identifica como fuera del MVP las integraciones aduaneras externas, aplicación móvil nativa, multimoneda, predicción por aprendizaje automático, simulaciones, integración con ERP y huella de carbono. Se respetó esa delimitación.
 
 ## Base de datos
+
+El [diagrama entidad-relación en Mermaid](docs/DIAGRAMA_BASE_DATOS.md) puede
+consultarse directamente en GitHub y se mantiene sincronizado con las migraciones.
 
 Las migraciones se ejecutan automáticamente en una base nueva:
 

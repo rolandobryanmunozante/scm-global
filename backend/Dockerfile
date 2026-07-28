@@ -13,6 +13,7 @@ RUN pnpm --filter @scm/backend build
 
 FROM base AS runtime
 ENV NODE_ENV=production
+LABEL org.opencontainers.image.source="https://github.com/rolandobryanmunozante/scm-global"
 RUN pnpm install --frozen-lockfile --prod --filter @scm/backend...
 COPY --from=build /app/backend/dist /app/backend/dist
 WORKDIR /app/backend

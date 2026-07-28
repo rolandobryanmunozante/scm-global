@@ -13,6 +13,7 @@ ENV VITE_SOCKET_URL=$VITE_SOCKET_URL
 RUN pnpm --filter @scm/frontend build
 
 FROM nginx:1.27-alpine
+LABEL org.opencontainers.image.source="https://github.com/rolandobryanmunozante/scm-global"
 COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/frontend/dist /usr/share/nginx/html
 EXPOSE 80

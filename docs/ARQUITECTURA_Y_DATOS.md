@@ -1,5 +1,8 @@
 # Arquitectura, datos y flujos
 
+El [diagrama entidad-relación completo](DIAGRAMA_BASE_DATOS.md) se mantiene como
+código Mermaid y GitHub lo representa automáticamente.
+
 ## Componentes
 
 ```text

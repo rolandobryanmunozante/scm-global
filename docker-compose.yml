@@ -33,6 +33,7 @@ services:
     restart: "no"
 
   backend:
+    image: ${BACKEND_IMAGE:-ghcr.io/rolandobryanmunozante/scm-global-backend:latest}
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -60,6 +61,7 @@ services:
       retries: 10
 
   frontend:
+    image: ${FRONTEND_IMAGE:-ghcr.io/rolandobryanmunozante/scm-global-frontend:latest}
     build:
       context: .
       dockerfile: frontend/Dockerfile
