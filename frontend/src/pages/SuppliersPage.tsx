@@ -1,4 +1,4 @@
-import { Edit3, Filter, Plus, RotateCcw, Search, Star, Trash2 } from "lucide-react";
+import { Boxes, Edit3, Filter, Plus, RotateCcw, Search, Star, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { api, getErrorMessage } from "../api/client";
@@ -20,9 +20,20 @@ interface Supplier {
   active: boolean;
   score: number;
   rating_count: number;
+  catalog: CatalogProduct[];
 }
 
 interface Category { id: number; name: string }
+interface CatalogProduct {
+  id: number;
+  sku: string;
+  name: string;
+  category_id?: number;
+  category?: string;
+  unit_of_measure: string;
+  unit_price: number;
+  lead_time_days?: number;
+}
 
 const emptyForm = {
   commercial_name: "",
@@ -33,6 +44,7 @@ const emptyForm = {
   phone: "",
   address: "",
   notes: "",
+  product_ids: [] as number[],
 };
 
 export function SuppliersPage() {
@@ -40,6 +52,7 @@ export function SuppliersPage() {
   const { can } = useAuth();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [catalogProducts, setCatalogProducts] = useState<CatalogProduct[]>([]);
   const [search, setSearch] = useState("");
   const [country, setCountry] = useState("");
   const [categoryId, setCategoryId] = useState("");
@@ -51,12 +64,14 @@ export function SuppliersPage() {
   const load = useCallback(async () => {
     setError("");
     try {
-      const [{ data }, categoryResponse] = await Promise.all([
+      const [{ data }, categoryResponse, productResponse] = await Promise.all([
         api.get<Supplier[]>("/proveedores", { params: { search, country: country || undefined, categoryId: categoryId || undefined, active: "all", sort: "score" } }),
         api.get<Category[]>("/proveedores/categorias"),
+        api.get<CatalogProduct[]>("/proveedores/catalogo-productos"),
       ]);
       setSuppliers(data);
       setCategories(categoryResponse.data);
+      setCatalogProducts(productResponse.data);
     } catch (cause) {
       setError(getErrorMessage(cause));
     } finally {
@@ -108,12 +123,13 @@ export function SuppliersPage() {
       {loading ? <LoadingState /> : suppliers.length === 0 ? <EmptyState title="No se encontraron proveedores" description="Pruebe con otros filtros o registre un nuevo proveedor." /> : (
         <div className="data-table-wrap">
           <table className="data-table">
-            <thead><tr><th>Código</th><th>Nombre comercial</th><th>País</th><th>Categoría</th><th>Calificación</th><th>Estado</th><th>Contacto</th><th>Acciones</th></tr></thead>
+            <thead><tr><th>Código</th><th>Nombre comercial</th><th>País</th><th>Catálogo</th><th>Calificación</th><th>Estado</th><th>Contacto</th><th>Acciones</th></tr></thead>
             <tbody>{suppliers.map((supplier) => (
               <tr key={supplier.id}>
                 <td><strong>{supplier.code}</strong><small>{supplier.tax_id}</small></td>
                 <td><strong>{supplier.commercial_name}</strong><small>{supplier.address ?? "Sin dirección"}</small></td>
-                <td>{supplier.country}</td><td>{supplier.category}</td>
+                <td>{supplier.country}</td>
+                <td><div className="supplier-catalog-summary"><strong><Boxes size={13}/>{supplier.catalog.length} productos</strong><small>{supplier.category} · {supplier.catalog.slice(0,2).map((product) => product.name).join(", ")}{supplier.catalog.length > 2 ? "…" : ""}</small></div></td>
                 <td><Stars value={Number(supplier.score)} /></td>
                 <td><StatusBadge status={supplier.active} /></td>
                 <td><strong>{supplier.email}</strong><small>{supplier.phone}</small></td>
@@ -128,13 +144,13 @@ export function SuppliersPage() {
           </table>
         </div>
       )}
-      <SupplierForm supplier={editing === "new" ? null : editing} categories={categories} open={editing !== null} onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await load(); }} />
+      <SupplierForm supplier={editing === "new" ? null : editing} categories={categories} products={catalogProducts} open={editing !== null} onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await load(); }} />
       <RatingForm supplier={rating} open={Boolean(rating)} onClose={() => setRating(null)} onSaved={async () => { setRating(null); await load(); }} />
     </>
   );
 }
 
-function SupplierForm({ supplier, categories, open, onClose, onSaved }: { supplier: Supplier | null; categories: Category[]; open: boolean; onClose: () => void; onSaved: () => Promise<void> }) {
+function SupplierForm({ supplier, categories, products, open, onClose, onSaved }: { supplier: Supplier | null; categories: Category[]; products: CatalogProduct[]; open: boolean; onClose: () => void; onSaved: () => Promise<void> }) {
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -144,11 +160,31 @@ function SupplierForm({ supplier, categories, open, onClose, onSaved }: { suppli
       commercial_name: supplier.commercial_name, tax_id: supplier.tax_id, country: supplier.country,
       category_id: String(supplier.category_id), email: supplier.email, phone: supplier.phone,
       address: supplier.address ?? "", notes: supplier.notes ?? "",
+      product_ids: supplier.catalog.map((product) => Number(product.id)),
     } : emptyForm);
     setError("");
   }, [supplier, open]);
 
-  const update = (field: keyof typeof form, value: string) => setForm((current) => ({ ...current, [field]: value }));
+  const compatibleProducts = products.filter(
+    (product) => Number(product.category_id) === Number(form.category_id),
+  );
+  const update = (field: keyof Omit<typeof form, "product_ids">, value: string) =>
+    setForm((current) => ({ ...current, [field]: value }));
+  const updateCategory = (value: string) =>
+    setForm((current) => ({
+      ...current,
+      category_id: value,
+      product_ids: products
+        .filter((product) => Number(product.category_id) === Number(value))
+        .map((product) => Number(product.id)),
+    }));
+  const toggleProduct = (productId: number) =>
+    setForm((current) => ({
+      ...current,
+      product_ids: current.product_ids.includes(productId)
+        ? current.product_ids.filter((id) => id !== productId)
+        : [...current.product_ids, productId],
+    }));
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setError(""); setSaving(true);
     try {
@@ -166,13 +202,31 @@ function SupplierForm({ supplier, categories, open, onClose, onSaved }: { suppli
           <Field label="Nombre comercial *" value={form.commercial_name} onChange={(value) => update("commercial_name", value)} />
           <Field label="NIT / RUC *" value={form.tax_id} onChange={(value) => update("tax_id", value)} />
           <label className="field"><span>País *</span><select value={form.country} onChange={(event) => update("country", event.target.value)} required><option>Bolivia</option><option>Perú</option><option>Brasil</option><option>Argentina</option><option>Chile</option></select></label>
-          <label className="field"><span>Categoría *</span><select value={form.category_id} onChange={(event) => update("category_id", event.target.value)} required><option value="">Seleccione…</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+          <label className="field"><span>Categoría *</span><select value={form.category_id} onChange={(event) => updateCategory(event.target.value)} required><option value="">Seleccione…</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
           <Field label="Correo *" type="email" value={form.email} onChange={(value) => update("email", value)} />
           <Field label="Teléfono *" value={form.phone} onChange={(value) => update("phone", value)} />
           <Field label="Dirección" value={form.address} onChange={(value) => update("address", value)} full />
           <label className="field full"><span>Notas</span><textarea value={form.notes} onChange={(event) => update("notes", event.target.value)} /></label>
+          <div className="field full">
+            <span>Catálogo del proveedor *</span>
+            <small className="hint">Solo estos productos podrán agregarse a sus órdenes de compra.</small>
+            <div className="supplier-catalog-picker">
+              {compatibleProducts.map((product) => (
+                <label key={product.id} className={form.product_ids.includes(Number(product.id)) ? "selected" : ""}>
+                  <input
+                    type="checkbox"
+                    checked={form.product_ids.includes(Number(product.id))}
+                    onChange={() => toggleProduct(Number(product.id))}
+                  />
+                  <span><strong>{product.name}</strong><small>{product.sku} · {product.unit_of_measure}</small></span>
+                </label>
+              ))}
+              {form.category_id && !compatibleProducts.length && <p>No hay productos activos en esta categoría.</p>}
+            </div>
+            {form.category_id && !form.product_ids.length && <small className="field-error">Seleccione al menos un producto.</small>}
+          </div>
         </div>
-        <div className="form-actions"><button className="button" type="button" onClick={onClose}>Cancelar</button><button className="button primary" disabled={saving}>{saving ? "Guardando…" : "Guardar proveedor"}</button></div>
+        <div className="form-actions"><button className="button" type="button" onClick={onClose}>Cancelar</button><button className="button primary" disabled={saving || !form.product_ids.length}>{saving ? "Guardando…" : "Guardar proveedor"}</button></div>
       </form>
     </Modal>
   );

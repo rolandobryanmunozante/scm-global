@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  ArrowLeft,
   ArrowRight,
   Boxes,
   CalendarClock,
@@ -9,8 +10,10 @@ import {
   Globe2,
   LogOut,
   MapPin,
+  Moon,
   PackageSearch,
   Radio,
+  Sun,
   Truck,
 } from "lucide-react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
@@ -20,6 +23,7 @@ import { api, getErrorMessage } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Alert, LoadingState, StatusBadge, formatDate } from "../components/ui";
 import { useNavigate, useParams } from "../router";
+import { useTheme } from "../theme";
 
 interface TrackingData {
   shipment: {
@@ -48,12 +52,15 @@ interface TrackingData {
     is_delayed: boolean;
     delay_minutes: number;
     incident_count: number;
+    latest_incident_type: string | null;
+    latest_incident_description: string | null;
   };
   events: Array<{
     id: number;
     event_type: string;
     status: string;
     description: string;
+    incident_type: string | null;
     latitude: number;
     longitude: number;
     evidence_url: string | null;
@@ -61,6 +68,14 @@ interface TrackingData {
     user_name: string | null;
   }>;
   items: Array<{ sku: string; product: string; quantity: number }>;
+}
+
+interface TrackingSuggestion {
+  tracking_code: string;
+  origin: string;
+  destination: string;
+  status: string;
+  eta_at: string | null;
 }
 
 const steps = ["PREPARANDO", "EN_TRANSITO", "EN_ADUANA", "ENTREGADO"];
@@ -75,7 +90,11 @@ export function TrackingPage() {
   const { user, logout } = useAuth();
   const { code } = useParams();
   const navigate = useNavigate();
+  const { theme, toggleTheme } = useTheme();
   const [query, setQuery] = useState(code ?? "");
+  const [suggestions, setSuggestions] = useState<TrackingSuggestion[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [showAllEvents, setShowAllEvents] = useState(false);
   const [data, setData] = useState<TrackingData | null>(null);
   const [loading, setLoading] = useState(Boolean(code));
   const [error, setError] = useState("");
@@ -98,9 +117,39 @@ export function TrackingPage() {
 
   useEffect(() => {
     setQuery(code ?? "");
+    setSuggestions([]);
+    setShowAllEvents(false);
     if (code) void load(code);
     else setData(null);
   }, [code, load]);
+
+  useEffect(() => {
+    const clean = query.trim();
+    if (clean.length < 2 || clean === code) {
+      setSuggestions([]);
+      setSuggestionsLoading(false);
+      return;
+    }
+    let active = true;
+    const timer = window.setTimeout(() => {
+      setSuggestionsLoading(true);
+      void api
+        .get<TrackingSuggestion[]>("/transporte/rastreo", { params: { q: clean, limit: 6 } })
+        .then(({ data: matches }) => {
+          if (active) setSuggestions(matches);
+        })
+        .catch(() => {
+          if (active) setSuggestions([]);
+        })
+        .finally(() => {
+          if (active) setSuggestionsLoading(false);
+        });
+    }, 180);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [query, code]);
 
   useEffect(() => {
     if (!data) return;
@@ -122,6 +171,7 @@ export function TrackingPage() {
   };
   const chooseExample = (trackingCode: string) => {
     setQuery(trackingCode);
+    setSuggestions([]);
     navigate(`/rastreo/${trackingCode}`);
   };
   const activeStep = data
@@ -146,20 +196,34 @@ export function TrackingPage() {
         ],
       ]
     : [];
+  const locationEvents = data?.events.filter((event) => event.event_type === "UBICACION") ?? [];
+  const operationalEvents = data?.events.filter((event) => event.event_type !== "UBICACION") ?? [];
+  const compactEvents = [
+    ...operationalEvents,
+    ...(locationEvents.length ? [locationEvents[locationEvents.length - 1]!] : []),
+  ].sort((left, right) => new Date(left.created_at).getTime() - new Date(right.created_at).getTime());
+  const visibleEvents = showAllEvents ? data?.events ?? [] : compactEvents;
+  const hiddenLocationEvents = Math.max(0, locationEvents.length - 1);
 
   return (
     <div className="tracking-page">
       <header className="tracking-header">
-        <a href="/" className="tracking-brand">
-          <div className="brand-mark">
-            <Boxes size={20} />
-          </div>
-          <div>
-            <strong>SCM Global</strong>
-            <span>Rastreo público</span>
-          </div>
-        </a>
+        <div className="tracking-header-left">
+          <button
+            className="tracking-back"
+            onClick={() => (data ? navigate("/rastreo") : user ? navigate("/") : window.history.back())}
+          >
+            <ArrowLeft size={16} /> {data ? "Volver a buscar" : "Volver"}
+          </button>
+          <a href="/" className="tracking-brand">
+            <div className="brand-mark"><Boxes size={20} /></div>
+            <div><strong>SCM Global</strong><span>Rastreo público</span></div>
+          </a>
+        </div>
         <div className="public-secure">
+          <button className="icon-button" title={theme === "dark" ? "Tema claro" : "Tema oscuro"} onClick={toggleTheme}>
+            {theme === "dark" ? <Sun size={14}/> : <Moon size={14}/>}
+          </button>
           <Globe2 size={15} />{" "}
           {user ? `Sesión: ${user.fullName}` : "Consulta segura · Sin inicio de sesión"}
           {user && (
@@ -177,19 +241,33 @@ export function TrackingPage() {
             Busque por el código único para consultar ubicación, carga, ETA e historial en
             tiempo real.
           </p>
-          <form className="tracking-search" onSubmit={submit}>
-            <PackageSearch size={20} />
-            <input
-              aria-label="Código de rastreo"
-              value={query}
-              onChange={(event) => setQuery(event.target.value.toUpperCase())}
-              placeholder="Escriba un código, por ejemplo SCM-BO-2026-007"
-              autoComplete="off"
-            />
-            <button disabled={query.trim().length < 5}>
-              Buscar <ArrowRight size={16} />
-            </button>
-          </form>
+          <div className="tracking-search-wrap">
+            <form className="tracking-search" onSubmit={submit}>
+              <PackageSearch size={20} />
+              <input
+                aria-label="Código de rastreo"
+                value={query}
+                onChange={(event) => setQuery(event.target.value.toUpperCase())}
+                placeholder="Código, origen o destino…"
+                autoComplete="off"
+              />
+              <button disabled={query.trim().length < 5}>
+                Buscar <ArrowRight size={16} />
+              </button>
+            </form>
+            {(suggestionsLoading || suggestions.length > 0) && (
+              <div className="tracking-suggestions">
+                {suggestionsLoading && <span>Buscando coincidencias…</span>}
+                {!suggestionsLoading && suggestions.map((suggestion) => (
+                  <button key={suggestion.tracking_code} type="button" onClick={() => chooseExample(suggestion.tracking_code)}>
+                    <PackageSearch size={15}/>
+                    <span><strong>{suggestion.tracking_code}</strong><small>{suggestion.origin} → {suggestion.destination}</small></span>
+                    <StatusBadge status={suggestion.status}/>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="tracking-examples">
             <small>Pruebe un flujo demostrativo:</small>
             {examples.map(([trackingCode, label]) => (
@@ -219,8 +297,8 @@ export function TrackingPage() {
                   </strong>
                   <span>
                     {data.shipment.status === "INCIDENCIA"
-                      ? `${data.shipment.incident_count} incidencia(s) registrada(s). El estado se conservará hasta publicar una resolución.`
-                      : `Demora aproximada: ${data.shipment.delay_minutes} minutos. La ETA ya refleja la última posición.`}
+                      ? `${incidentLabel(data.shipment.latest_incident_type)} · ${data.shipment.latest_incident_description ?? `${data.shipment.incident_count} incidencia(s) registrada(s).`}`
+                      : `Demora aproximada: ${formatDelay(data.shipment.delay_minutes)}. La ETA ya refleja la última posición.`}
                   </span>
                 </div>
               </div>
@@ -366,11 +444,11 @@ export function TrackingPage() {
                     <CalendarClock size={17} />
                   </div>
                   <div className="timeline">
-                    {[...data.events].reverse().map((event, index) => (
+                    {[...visibleEvents].reverse().map((event, index) => (
                       <article key={event.id} className={index === 0 ? "current" : ""}>
                         <i />
                         <div>
-                          <span>{event.event_type.replaceAll("_", " ")}</span>
+                          <span>{event.event_type.replaceAll("_", " ")}{event.incident_type ? ` · ${incidentLabel(event.incident_type)}` : ""}</span>
                           <strong>{event.description}</strong>
                           <small>
                             {formatDate(event.created_at, true)} · {event.user_name ?? "Sistema"}
@@ -384,6 +462,13 @@ export function TrackingPage() {
                       </article>
                     ))}
                   </div>
+                  {hiddenLocationEvents > 0 && (
+                    <button className="timeline-toggle" type="button" onClick={() => setShowAllEvents((current) => !current)}>
+                      {showAllEvents
+                        ? "Ocultar actualizaciones repetitivas"
+                        : `Ver ${hiddenLocationEvents} actualizaciones de ubicación`}
+                    </button>
+                  )}
                 </div>
               </aside>
             </div>
@@ -400,4 +485,22 @@ export function TrackingPage() {
 function eventDate(events: TrackingData["events"], status: string) {
   const event = [...events].reverse().find((item) => item.status === status);
   return event ? formatDate(event.created_at, true) : "Pendiente";
+}
+
+function incidentLabel(value: string | null | undefined) {
+  const labels: Record<string, string> = {
+    MECANICA: "Falla mecánica",
+    CLIMATICA: "Condición climática",
+    ADUANA: "Control aduanero",
+    TRAFICO: "Tráfico o bloqueo",
+    SEGURIDAD: "Seguridad",
+    DOCUMENTACION: "Documentación",
+    OTRA: "Otra incidencia",
+  };
+  return value ? labels[value] ?? value.replaceAll("_", " ") : "Incidencia operativa";
+}
+
+function formatDelay(minutes: number) {
+  if (minutes < 1) return "menos de 1 minuto";
+  return `${minutes} minuto${minutes === 1 ? "" : "s"}`;
 }

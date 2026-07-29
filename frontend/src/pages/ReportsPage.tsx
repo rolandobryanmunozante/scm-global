@@ -101,12 +101,11 @@ export function ReportsPage() {
   const [productId, setProductId] = useState("");
   const [trace, setTrace] = useState<Traceability | null>(null);
   const [audit, setAudit] = useState<AuditItem[]>([]);
-  const [filters, setFilters] = useState({
-    from: "",
-    to: "",
+  const [filters, setFilters] = useState(() => ({
+    ...defaultDateRange(),
     country: "",
     supplierId: "",
-  });
+  }));
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState<ExportFormat | null>(null);
   const [message, setMessage] = useState("");
@@ -167,6 +166,10 @@ export function ReportsPage() {
     if (!canExport || downloading) return;
     setError("");
     setMessage("");
+    if (!filters.from || !filters.to) {
+      setError("Seleccione una fecha inicial y una fecha final antes de exportar.");
+      return;
+    }
     if (filters.from && filters.to && filters.from > filters.to) {
       setError("La fecha inicial no puede ser posterior a la fecha final.");
       return;
@@ -252,18 +255,22 @@ export function ReportsPage() {
             <div className="card-body">
               <div className="form-grid">
                 <label className="field">
-                  <span>Fecha desde</span>
+                  <span>Fecha desde *</span>
                   <input
                     type="date"
                     value={filters.from}
+                    required
+                    max={filters.to || undefined}
                     onChange={(event) => setFilters({ ...filters, from: event.target.value })}
                   />
                 </label>
                 <label className="field">
-                  <span>Fecha hasta</span>
+                  <span>Fecha hasta *</span>
                   <input
                     type="date"
                     value={filters.to}
+                    required
+                    min={filters.from || undefined}
                     onChange={(event) => setFilters({ ...filters, to: event.target.value })}
                   />
                 </label>
@@ -329,7 +336,7 @@ export function ReportsPage() {
                   <p>
                     {filterSummary.length
                       ? filterSummary.join(" · ")
-                      : "Todas las fechas, países y proveedores"}
+                      : "Seleccione un rango de fechas"}
                   </p>
                 </div>
                 <div className="report-preview-tags">
@@ -342,7 +349,7 @@ export function ReportsPage() {
               <div className="export-buttons">
                 <button
                   className="export-card pdf"
-                  disabled={!canExport || downloading !== null}
+                  disabled={!canExport || downloading !== null || !filters.from || !filters.to}
                   onClick={() => void exportReport("pdf")}
                 >
                   <span className="export-icon"><FileText size={25} /></span>
@@ -355,7 +362,7 @@ export function ReportsPage() {
                 </button>
                 <button
                   className="export-card excel"
-                  disabled={!canExport || downloading !== null}
+                  disabled={!canExport || downloading !== null || !filters.from || !filters.to}
                   onClick={() => void exportReport("xlsx")}
                 >
                   <span className="export-icon"><FileSpreadsheet size={25} /></span>
@@ -507,4 +514,14 @@ function extractFilename(contentDisposition: unknown) {
   if (typeof contentDisposition !== "string") return "";
   const match = contentDisposition.match(/filename="?([^";]+)"?/i);
   return match?.[1] ?? "";
+}
+
+function defaultDateRange() {
+  const today = new Date();
+  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+  const toLocalDate = (value: Date) => {
+    const timezoneOffset = value.getTimezoneOffset() * 60_000;
+    return new Date(value.getTime() - timezoneOffset).toISOString().slice(0, 10);
+  };
+  return { from: toLocalDate(firstDay), to: toLocalDate(today) };
 }

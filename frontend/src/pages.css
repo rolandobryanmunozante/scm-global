@@ -287,3 +287,78 @@
   .report-preview{align-items:flex-start;flex-wrap:wrap}
   .report-preview-tags{max-width:none;justify-content:flex-start}
 }
+
+/* Catálogos de proveedores y selección de compras */
+.supplier-catalog-summary{display:flex;min-width:180px;flex-direction:column}
+.supplier-catalog-summary>strong{display:flex;align-items:center;gap:5px;color:#0a4174;font-size:9px}
+.supplier-catalog-summary>small{max-width:230px;margin-top:3px;overflow:hidden;color:#6ea2b3;text-overflow:ellipsis;white-space:nowrap}
+.supplier-catalog-picker{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px}
+.supplier-catalog-picker>label{display:flex;align-items:center;gap:9px;padding:11px;border:1px solid var(--border);border-radius:10px;background:var(--muted-bg);cursor:pointer}
+.supplier-catalog-picker>label.selected{border-color:#7bbde8;background:#e8f4fa;box-shadow:0 0 0 2px rgba(123,189,232,.12)}
+.supplier-catalog-picker input{width:16px;height:16px;accent-color:#0a4174}
+.supplier-catalog-picker label>span{display:flex;min-width:0;flex-direction:column}
+.supplier-catalog-picker strong{font-size:10px}.supplier-catalog-picker small{margin-top:2px;color:#6ea2b3;font-size:8px}
+.supplier-catalog-picker>p{grid-column:1/-1;margin:0;padding:16px;color:#6ea2b3;border:1px dashed var(--border);border-radius:9px;text-align:center}
+.purchase-catalog-layout{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(290px,.65fr);gap:12px;margin-top:18px}
+.purchase-catalog,.purchase-cart{overflow:hidden;border:1px solid var(--border);border-radius:13px;background:var(--surface)}
+.purchase-catalog>header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 15px;border-bottom:1px solid var(--border);background:var(--muted-bg)}
+.purchase-catalog>header>div:first-child,.purchase-cart>header>div{display:flex;flex-direction:column}
+.purchase-catalog>header strong,.purchase-cart>header strong{font-size:11px}.purchase-catalog>header small,.purchase-cart>header small{margin-top:2px;color:#6ea2b3;font-size:8px}
+.purchase-catalog .search-input{max-width:245px;background:var(--surface)}
+.purchase-catalog-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;max-height:330px;overflow-y:auto;padding:12px}
+.purchase-catalog-grid>button{display:flex;min-height:70px;align-items:center;justify-content:space-between;gap:10px;padding:11px;color:inherit;border:1px solid var(--border);border-radius:10px;background:var(--surface);text-align:left}
+.purchase-catalog-grid>button:hover:not(:disabled){border-color:#7bbde8;background:#f0f8fc}
+.purchase-catalog-grid>button.selected{border-color:#6ea2b3;background:#e8f4fa}
+.purchase-catalog-grid>button>span{display:flex;min-width:0;flex-direction:column}.purchase-catalog-grid strong{font-size:9px}.purchase-catalog-grid small{margin-top:4px;color:#6ea2b3;font-size:7px}.purchase-catalog-grid b{flex:0 0 auto;color:#0a4174;font-size:9px}
+.purchase-cart{display:flex;min-height:330px;flex-direction:column}
+.purchase-cart>header{display:flex;align-items:center;gap:9px;padding:14px;border-bottom:1px solid var(--border);background:#001d39;color:#fff}
+.purchase-cart>p{margin:auto;padding:25px;color:#6ea2b3;font-size:9px;text-align:center}
+.purchase-cart-items{display:grid;gap:0;max-height:280px;overflow-y:auto}
+.purchase-cart-items article{display:grid;grid-template-columns:1fr 62px 34px;align-items:center;gap:8px;padding:11px 12px;border-bottom:1px solid var(--border)}
+.purchase-cart-items article>div{display:flex;min-width:0;flex-direction:column}.purchase-cart-items strong{overflow:hidden;font-size:9px;text-overflow:ellipsis;white-space:nowrap}.purchase-cart-items small{margin-top:3px;color:#6ea2b3;font-size:7px}
+.purchase-cart-items input{width:62px;min-height:34px;padding:5px;text-align:center;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:inherit}
+.purchase-cart>footer{display:flex;align-items:center;justify-content:space-between;margin-top:auto;padding:13px 14px;border-top:1px solid var(--border);background:var(--muted-bg)}
+.purchase-cart>footer span{color:#6ea2b3;font-size:8px}.purchase-cart>footer strong{color:#0a4174;font-size:14px}
+
+/* Rastreo compacto y autocompletado */
+.tracking-header-left{display:flex;align-items:center;gap:18px}
+.tracking-back{display:inline-flex;align-items:center;gap:6px;padding:7px 9px;color:#49769f;border:1px solid var(--border);border-radius:8px;background:var(--surface);font-size:9px;font-weight:700}
+.tracking-search-wrap{position:relative;max-width:640px;margin:24px auto 0}
+.tracking-search-wrap .tracking-search{margin:0}
+.tracking-suggestions{position:absolute;z-index:800;top:calc(100% + 7px);right:0;left:0;overflow:hidden;border:1px solid var(--border);border-radius:11px;background:var(--surface);box-shadow:0 18px 38px rgba(0,29,57,.16);text-align:left}
+.tracking-suggestions>span{display:block;padding:13px;color:#6ea2b3;font-size:9px}
+.tracking-suggestions>button{display:flex;width:100%;align-items:center;gap:10px;padding:11px 13px;color:inherit;border:0;border-bottom:1px solid var(--border);background:var(--surface);text-align:left}
+.tracking-suggestions>button:last-child{border-bottom:0}.tracking-suggestions>button:hover{background:var(--muted-bg)}
+.tracking-suggestions>button>svg{color:#4e8ea2}.tracking-suggestions>button>span{display:flex;min-width:0;flex:1;flex-direction:column}.tracking-suggestions strong{font-size:9px}.tracking-suggestions small{overflow:hidden;margin-top:2px;color:#6ea2b3;font-size:7px;text-overflow:ellipsis;white-space:nowrap}
+.timeline-card .timeline{max-height:490px;overflow-y:auto}
+.timeline-toggle{width:calc(100% - 28px);margin:0 14px 14px;padding:9px;color:#0a4174;border:1px dashed #7bbde8;border-radius:8px;background:#eef7fc;font-size:8px;font-weight:700}
+
+/* Explicación de reservas */
+.reservation-link{display:inline-flex;align-items:center;gap:4px;margin-top:4px;padding:3px 6px;color:#9a5b07;border:0;border-radius:999px;background:#fff4ce;font-size:7px;font-weight:750}
+.reservation-explanation{display:flex;align-items:flex-start;gap:10px;padding:13px;color:#0a4174;border:1px solid #bdd8e9;border-radius:10px;background:#eef7fc}
+.reservation-explanation>div{display:flex;flex-direction:column}.reservation-explanation strong{font-size:10px}.reservation-explanation span{margin-top:3px;color:#49769f;font-size:8px;line-height:1.5}
+.reservation-list{display:grid;gap:8px;margin-top:12px}.reservation-list article{display:flex;align-items:center;gap:10px;padding:11px;border:1px solid var(--border);border-radius:9px}.reservation-list article>svg{color:#4e8ea2}.reservation-list article>div{display:flex;min-width:0;flex:1;flex-direction:column}.reservation-list strong{font-size:9px}.reservation-list span,.reservation-list small{margin-top:2px;color:#6ea2b3;font-size:7px}
+
+@media(max-width:760px){
+  .purchase-catalog-layout{grid-template-columns:1fr}
+  .supplier-catalog-picker,.purchase-catalog-grid{grid-template-columns:1fr}
+  .purchase-catalog>header{align-items:stretch;flex-direction:column}
+  .purchase-catalog .search-input{max-width:none}
+  .tracking-header-left{gap:8px}
+  .tracking-back{padding:7px}.tracking-back{font-size:0}
+}
+
+:root[data-theme="dark"] :is(.purchase-catalog,.purchase-cart,.purchase-catalog-grid>button,.supplier-catalog-picker>label,.tracking-suggestions,.tracking-suggestions>button,.tracking-back,.reservation-list article){
+  color:#dcecf5;border-color:var(--border);background:var(--surface)
+}
+:root[data-theme="dark"] :is(.purchase-catalog>header,.purchase-cart>footer,.tracking-suggestions>button:hover,.supplier-catalog-picker>label.selected){
+  color:#dcecf5;border-color:var(--border);background:var(--muted-bg)
+}
+:root[data-theme="dark"] .purchase-catalog-grid>button:hover:not(:disabled){background:#102b42}
+:root[data-theme="dark"] .purchase-catalog-grid>button.selected{border-color:#4e8ea2;background:#153a58}
+:root[data-theme="dark"] .purchase-catalog-grid b,
+:root[data-theme="dark"] .purchase-cart>footer strong,
+:root[data-theme="dark"] .timeline-toggle{color:#bdd8e9}
+:root[data-theme="dark"] .timeline-toggle{border-color:#49769f;background:#0d263b}
+:root[data-theme="dark"] .reservation-link{color:#fde68a;background:#4a340b}
+:root[data-theme="dark"] .reservation-explanation{color:#bdd8e9;border-color:#244760;background:#0d263b}
