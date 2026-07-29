@@ -7,11 +7,11 @@ import { audit } from "../../shared/audit.js";
 import { pool } from "../../shared/db.js";
 import { AppError } from "../../shared/errors.js";
 import { sendMail } from "../../shared/mailer.js";
-import { emitEvent } from "../../shared/realtime.js";
+import { emitEvent, emitShipmentEvent } from "../../shared/realtime.js";
 import {
   checkLatePurchaseOrders,
+  confirmShipmentReception,
   generateAutomaticPurchaseOrders,
-  receivePurchaseOrder,
 } from "./inventarios.service.js";
 
 const router = Router();
@@ -242,7 +242,7 @@ router.get(
                    WHERE shipment.origin_warehouse_id=w.id
                      AND item.product_id=p.id
                      AND shipment.flow_type='SALIDA_DISTRIBUCION'
-                     AND shipment.status='PREPARANDO'
+                     AND shipment.status IN ('PREPARANDO','ASIGNADO')
                      AND shipment.inventory_reserved_at IS NOT NULL
                      AND shipment.inventory_dispatched_at IS NULL
                  ),'[]'::JSON)
@@ -537,14 +537,21 @@ router.get(
   asyncHandler(async (_request, response) => {
     const result = await pool.query(
       `SELECT po.*, s.commercial_name AS supplier,
-              (SELECT sh.id FROM shipments sh WHERE sh.purchase_order_id=po.id) AS shipment_id,
+              shipment.id AS shipment_id,
+              shipment.status AS shipment_status,
+              shipment.tracking_code,
+              shipment.destination_warehouse_id,
+              destination_warehouse.name AS destination_warehouse_name,
               json_agg(json_build_object('product_id',p.id,'sku',p.sku,'product',p.name,'quantity',i.quantity,'unit_price',i.unit_price)) AS items,
               SUM(i.quantity*i.unit_price)::NUMERIC(16,2) AS total
        FROM purchase_orders po
        JOIN suppliers s ON s.id=po.supplier_id
+       LEFT JOIN shipments shipment ON shipment.purchase_order_id=po.id
+       LEFT JOIN warehouses destination_warehouse ON destination_warehouse.id=shipment.destination_warehouse_id
        JOIN purchase_order_items i ON i.purchase_order_id=po.id
        JOIN products p ON p.id=i.product_id
-       GROUP BY po.id,s.commercial_name ORDER BY po.created_at DESC`,
+       GROUP BY po.id,s.commercial_name,shipment.id,destination_warehouse.name
+       ORDER BY po.created_at DESC`,
     );
     response.json(result.rows);
   }),
@@ -716,33 +723,50 @@ router.post(
     try {
       await client.query("BEGIN");
       const linkedShipment = await client.query(
-        "SELECT id,tracking_code,status FROM shipments WHERE purchase_order_id=$1 FOR SHARE",
+        `SELECT id,tracking_code,status,destination_warehouse_id
+         FROM shipments WHERE purchase_order_id=$1 FOR SHARE`,
         [orderId],
       );
-      if (linkedShipment.rowCount) {
+      if (!linkedShipment.rowCount) {
         throw new AppError(
           409,
-          `La orden está vinculada al envío ${linkedShipment.rows[0].tracking_code}; registre la entrega desde Transporte`,
+          "La orden debe completar proveedor, logística y transporte antes de ingresar al inventario",
         );
       }
-      const result = await receivePurchaseOrder(client, orderId, warehouse_id, request.user!.id);
+      const shipment = linkedShipment.rows[0];
+      if (Number(shipment.destination_warehouse_id) !== warehouse_id) {
+        throw new AppError(
+          409,
+          "El almacén seleccionado no coincide con el destino físico del envío",
+        );
+      }
+      const result = await confirmShipmentReception(
+        client,
+        Number(shipment.id),
+        request.user!.id,
+      );
       await audit(
         request,
         {
-          action: "RECEIVE",
+          action: "CONFIRM_RECEPTION",
           entityType: "purchase_order",
           entityId: orderId,
-          details: { warehouseId: warehouse_id, productIds: result.productIds },
+          details: {
+            shipmentId: Number(shipment.id),
+            warehouseId: warehouse_id,
+            productIds: result.productIds,
+          },
         },
         client,
       );
       await client.query("COMMIT");
+      emitShipmentEvent(Number(shipment.id), "shipment:updated", result.shipment);
       emitEvent("inventory", "purchase:received", {
         orderId,
         warehouseId: warehouse_id,
         productIds: result.productIds,
       });
-      response.json(result.order);
+      response.json(result);
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;

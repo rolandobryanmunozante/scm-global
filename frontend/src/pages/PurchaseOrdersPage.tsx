@@ -8,6 +8,10 @@ import { Alert, EmptyState, LoadingState, Modal, PageHeader, StatusBadge, format
 interface PurchaseOrder {
   id: number; code: string; supplier: string; status: string; automatic: boolean;
   shipment_id: number | null;
+  shipment_status: string | null;
+  tracking_code: string | null;
+  destination_warehouse_id: number | null;
+  destination_warehouse_name: string | null;
   expected_delivery_date: string | null; created_at: string; total: number;
   items: Array<{ product_id: number; sku: string; product: string; quantity: number; unit_price: number }>;
 }
@@ -22,8 +26,6 @@ interface CatalogProduct {
   unit_price: number;
   lead_time_days: number;
 }
-interface Warehouse { id: number; code: string; name: string }
-
 export function PurchaseOrdersPage() {
   const { t } = useTranslation();
   const { can } = useAuth();
@@ -32,20 +34,17 @@ export function PurchaseOrdersPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
   const [receiving, setReceiving] = useState<PurchaseOrder | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [ordersResponse, suppliersResponse, warehousesResponse] = await Promise.all([
+      const [ordersResponse, suppliersResponse] = await Promise.all([
         api.get<PurchaseOrder[]>("/inventarios/ordenes-compra"),
         can("purchases.write") ? api.get<Supplier[]>("/proveedores?active=true") : Promise.resolve({ data: [] }),
-        can("purchases.receive") ? api.get<Warehouse[]>("/inventarios/almacenes") : Promise.resolve({ data: [] }),
       ]);
       setOrders(ordersResponse.data);
       setSuppliers(suppliersResponse.data);
-      setWarehouses(warehousesResponse.data);
     }
     catch (cause) { setError(getErrorMessage(cause)); } finally { setLoading(false); }
   }, [can]);
@@ -77,18 +76,41 @@ export function PurchaseOrdersPage() {
     {loading ? <LoadingState /> : orders.length === 0 ? <EmptyState title="No hay órdenes de compra" /> : <div className="order-grid">
       {orders.map((order) => <article className="card order-card" key={order.id}>
         <header><div><span>{order.code}</span><h3>{order.supplier}</h3></div><StatusBadge status={order.status}/></header>
-        <div className="order-origin">{order.shipment_id ? <><Truck size={14}/> Recepción gestionada por Transporte · envío #{order.shipment_id}</> : order.automatic ? <><Bot size={14}/> Generada automáticamente</> : "Orden manual"}</div>
+        <div className="order-origin">{order.shipment_id ? <><Truck size={14}/> {order.tracking_code} · {order.shipment_status?.replaceAll("_", " ")}</> : order.automatic ? <><Bot size={14}/> Generada automáticamente</> : "Orden manual"}</div>
+        <div className="order-next-action"><strong>Siguiente responsable</strong><span>{purchaseNextAction(order)}</span></div>
         <div className="order-items">{order.items.map((item) => <div key={item.product_id}><div><strong>{item.product}</strong><small>{item.sku}</small></div><span>{item.quantity} × {formatMoney(item.unit_price)}</span></div>)}</div>
         <div className="order-total"><span>Total estimado</span><strong>{formatMoney(order.total)}</strong></div>
         <footer><div><small>Generada</small><span>{formatDate(order.created_at)}</span></div><div><small>Entrega esperada</small><span>{formatDate(order.expected_delivery_date)}</span></div>
           {order.status === "BORRADOR" && can("purchases.approve") && <button className="button success" onClick={() => void approve(order.id)}><Check size={14}/> Aprobar</button>}
-          {!order.shipment_id && ["APROBADA","ENVIADA","CONFIRMADA"].includes(order.status) && can("purchases.receive") && <button className="button success" onClick={() => setReceiving(order)}><PackageCheck size={14}/> Recibir</button>}
+          {order.shipment_status === "PENDIENTE_RECEPCION" && can("purchases.receive") && <button className="button success" onClick={() => setReceiving(order)}><PackageCheck size={14}/> Revisar y recibir</button>}
         </footer>
       </article>)}
     </div>}
     <CreateOrderModal open={createOpen} suppliers={suppliers} onClose={() => setCreateOpen(false)} onSaved={async () => { setCreateOpen(false); setMessage("Orden manual creada en estado borrador."); await load(); }}/>
-    <ReceiveOrderModal order={receiving} warehouses={warehouses} onClose={() => setReceiving(null)} onSaved={async () => { setReceiving(null); setMessage("Orden recibida; el inventario y su trazabilidad fueron actualizados."); await load(); }}/>
+    <ReceiveOrderModal order={receiving} onClose={() => setReceiving(null)} onSaved={async () => { setReceiving(null); setMessage("Orden recibida; el inventario y su trazabilidad fueron actualizados."); await load(); }}/>
   </>;
+}
+
+function purchaseNextAction(order: PurchaseOrder): string {
+  if (order.status === "BORRADOR") return "Compras debe revisar y aprobar la orden.";
+  if (order.status === "APROBADA") return "El proveedor debe confirmar fecha y documento desde su portal.";
+  if (order.status === "CONFIRMADA" && !order.shipment_id) {
+    return "Logística debe crear el envío con una ruta de entrada.";
+  }
+  if (order.shipment_status === "PREPARANDO") {
+    return "Logística debe asignar vehículo y transportista.";
+  }
+  if (order.shipment_status === "ASIGNADO") {
+    return "El transportista debe aceptar la carga e iniciar el viaje.";
+  }
+  if (["EN_TRANSITO", "EN_ADUANA", "INCIDENCIA", "RETRASADO"].includes(order.shipment_status ?? "")) {
+    return "El transportista mantiene el rastreo y debe registrar el arribo.";
+  }
+  if (order.shipment_status === "PENDIENTE_RECEPCION") {
+    return "Inventario debe revisar la carga y confirmar el ingreso.";
+  }
+  if (order.status === "RECIBIDA") return "Flujo completado e inventario conciliado.";
+  return "Pendiente de continuidad operativa.";
 }
 
 function CreateOrderModal({ open, suppliers, onClose, onSaved }: { open: boolean; suppliers: Supplier[]; onClose: () => void; onSaved: () => Promise<void> }) {
@@ -210,20 +232,21 @@ function CreateOrderModal({ open, suppliers, onClose, onSaved }: { open: boolean
   </Modal>;
 }
 
-function ReceiveOrderModal({ order, warehouses, onClose, onSaved }: { order: PurchaseOrder | null; warehouses: Warehouse[]; onClose: () => void; onSaved: () => Promise<void> }) {
-  const [warehouseId, setWarehouseId] = useState("");
+function ReceiveOrderModal({ order, onClose, onSaved }: { order: PurchaseOrder | null; onClose: () => void; onSaved: () => Promise<void> }) {
   const [error, setError] = useState("");
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!order) return;
+    if (!order?.destination_warehouse_id) return;
     try {
-      await api.post(`/inventarios/ordenes-compra/${order.id}/recibir`, { warehouse_id: Number(warehouseId) });
+      await api.post(`/inventarios/ordenes-compra/${order.id}/recibir`, {
+        warehouse_id: Number(order.destination_warehouse_id),
+      });
       await onSaved();
     } catch (cause) { setError(getErrorMessage(cause)); }
   };
   return <Modal open={Boolean(order)} onClose={onClose} title={`Recibir ${order?.code ?? ""}`} width="520px">
     {error && <Alert>{error}</Alert>}
-    <p className="modal-intro">La recepción creará movimientos de entrada para todos los productos de la orden.</p>
-    <form onSubmit={submit}><label className="field"><span>Almacén de destino *</span><select value={warehouseId} onChange={(event) => setWarehouseId(event.target.value)} required><option value="">Seleccione…</option>{warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.code} · {warehouse.name}</option>)}</select></label><div className="form-actions"><button type="button" className="button" onClick={onClose}>Cancelar</button><button className="button success"><PackageCheck size={14}/> Confirmar recepción</button></div></form>
+    <p className="modal-intro">Confirme únicamente después de revisar físicamente cantidades y estado de la carga. Esta acción ingresará todos los productos a <strong>{order?.destination_warehouse_name}</strong> y cerrará el envío {order?.tracking_code}.</p>
+    <form onSubmit={submit}><div className="form-actions"><button type="button" className="button" onClick={onClose}>Cancelar</button><button className="button success" disabled={!order?.destination_warehouse_id}><PackageCheck size={14}/> Confirmar recepción física</button></div></form>
   </Modal>;
 }

@@ -1,4 +1,4 @@
-import { ClipboardPlus, Edit3, LocateFixed, Plus, RotateCcw, Send, Settings2, Trash2, Truck } from "lucide-react";
+import { CheckCircle2, ClipboardPlus, Edit3, LocateFixed, PackageCheck, Plus, RotateCcw, Send, Settings2, Trash2, Truck } from "lucide-react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { io } from "socket.io-client";
 import { api, getErrorMessage } from "../api/client";
@@ -72,6 +72,35 @@ export function ShipmentsPage() {
     return () => { socket.disconnect(); };
   }, [load]);
 
+  const acceptShipment = async (shipment: Shipment) => {
+    setError("");
+    try {
+      await api.post(`/transporte/envios/${shipment.id}/aceptar`);
+      setMessage("Asignación aceptada. El traslado comenzó y el despacho quedó registrado.");
+      await load();
+    } catch (cause) {
+      setError(getErrorMessage(cause));
+    }
+  };
+
+  const confirmReception = async (shipment: Shipment) => {
+    if (
+      !window.confirm(
+        `¿Confirma que la carga ${shipment.tracking_code} fue revisada físicamente y puede ingresar al inventario?`,
+      )
+    ) {
+      return;
+    }
+    setError("");
+    try {
+      await api.post(`/transporte/envios/${shipment.id}/confirmar-recepcion`);
+      setMessage("Recepción confirmada. El envío y el inventario fueron actualizados.");
+      await load();
+    } catch (cause) {
+      setError(getErrorMessage(cause));
+    }
+  };
+
   return <>
     <PageHeader title="Asignación y seguimiento" subtitle={user?.role === "DRIVER" ? "Envíos asignados a su operación" : "Vehículos, transportistas y estado de los envíos"} actions={
       can("shipments.assign") ? <>{can("transport.resources") && <button className="button" onClick={() => setFleetOpen(true)}><Settings2 size={15}/> Gestionar flota</button>}<button className="button primary" onClick={() => setCreateOpen(true)}><Plus size={15}/> Nuevo envío</button></> : undefined
@@ -79,22 +108,51 @@ export function ShipmentsPage() {
     {error && <Alert>{error}</Alert>}{message && <Alert type="success">{message}</Alert>}
     {loading ? <LoadingState /> : shipments.length === 0 ? <EmptyState title="No hay envíos disponibles" /> : <div className="shipments-board">{shipments.map((shipment) => <article className="card shipment-card" key={shipment.id}>
       <div className="shipment-card-top"><div className={`transport-symbol ${shipment.transport_mode.toLowerCase()}`}><Truck size={19}/></div><div><span>{shipment.tracking_code}</span><strong>{shipment.origin} → {shipment.destination}</strong></div><StatusBadge status={shipment.status}/></div>
-      <div className={`shipment-flow ${shipment.flow_type === "ENTRADA_COMPRA" ? "inbound" : "outbound"}`}><strong>{shipment.flow_type === "ENTRADA_COMPRA" ? "ENTRADA · COMPRA" : "SALIDA · DISTRIBUCIÓN"}</strong><span>{shipment.flow_type === "ENTRADA_COMPRA" ? `Recogida desde ${shipment.supplier_name ?? shipment.origin}; llega a ${shipment.destination_warehouse_name ?? shipment.destination} y aumenta inventario al entregarse.` : `Sale de ${shipment.origin_warehouse_name ?? shipment.origin}; el inventario se descuenta al asignar el transporte${shipment.destination_warehouse_name ? ` y aumenta en ${shipment.destination_warehouse_name} al entregarse` : ""}.`}</span></div>
+      <div className={`shipment-flow ${shipment.flow_type === "ENTRADA_COMPRA" ? "inbound" : "outbound"}`}><strong>{shipment.flow_type === "ENTRADA_COMPRA" ? "ENTRADA · COMPRA" : "SALIDA · DISTRIBUCIÓN"}</strong><span>{shipment.flow_type === "ENTRADA_COMPRA" ? `Recogida desde ${shipment.supplier_name ?? shipment.origin}. El transportista registra el arribo y después Inventario confirma la recepción en ${shipment.destination_warehouse_name ?? shipment.destination}.` : `Sale de ${shipment.origin_warehouse_name ?? shipment.origin}; el stock reservado se descuenta cuando el conductor acepta la carga${shipment.destination_warehouse_name ? ` y se suma en ${shipment.destination_warehouse_name} cuando Inventario confirma la recepción` : ""}.`}</span></div>
+      <div className="shipment-next-action"><strong>Siguiente responsable</strong><span>{shipmentNextAction(shipment)}</span></div>
       {(shipment.status === "INCIDENCIA" || shipment.is_delayed) && <div className={`shipment-ops-alert ${shipment.status === "INCIDENCIA" ? "incident" : "delay"}`}><strong>{shipment.status === "INCIDENCIA" ? `Incidencia · ${incidentTypeLabel(shipment.latest_incident_type)}` : "Retraso detectado"}</strong><span>{shipment.status === "INCIDENCIA" ? shipment.latest_incident_description ?? `${shipment.incident_count} incidencia(s) registrada(s)` : `${formatDelay(shipment.delay_minutes)} sobre la ETA`}</span></div>}
-      <div className="shipment-progress"><span className="complete"/><i className={shipment.status !== "PREPARANDO" ? "complete" : ""}/><i className={["EN_ADUANA","ENTREGADO"].includes(shipment.status) ? "complete" : ""}/><span className={shipment.status === "ENTREGADO" ? "complete" : ""}/></div>
-      <div className="shipment-stages"><span>Preparando</span><span>En tránsito</span><span>Aduana</span><span>Entregado</span></div>
+      <div className="shipment-progress"><span className="complete"/><i className={shipmentStage(shipment.status) >= 1 ? "complete" : ""}/><i className={shipmentStage(shipment.status) >= 2 ? "complete" : ""}/><i className={shipmentStage(shipment.status) >= 3 ? "complete" : ""}/><span className={shipmentStage(shipment.status) >= 4 ? "complete" : ""}/></div>
+      <div className="shipment-stages"><span>Preparando</span><span>Asignado</span><span>En tránsito</span><span>Recepción</span><span>Entregado</span></div>
       <div className="shipment-details"><div><small>Vehículo</small><strong>{shipment.plate ?? "Sin asignar"}</strong></div><div><small>Transportista</small><strong>{shipment.driver ?? "Sin asignar"}</strong></div><div><small>ETA</small><strong>{formatDate(shipment.eta_at, true)}</strong></div><div><small>Posición</small><strong>{shipment.position_state?.replaceAll("_", " ") ?? "SIN ACTUALIZAR"}</strong></div></div>
       <div className="shipment-items">{shipment.purchase_order_id && <span>{shipment.purchase_order_code ?? `Compra #${shipment.purchase_order_id}`}</span>}{shipment.items?.map((item) => <span key={item.product_id}>{item.sku} · {item.quantity}</span>)}</div>
       <footer><a className="button" href={`/rastreo/${shipment.tracking_code}`}><LocateFixed size={14}/> Ver rastreo</a>
         {shipment.status === "PREPARANDO" && can("shipments.assign") && <button className="button primary" onClick={() => setAssigning(shipment)}><Truck size={14}/> Asignar transporte</button>}
-        {can("shipments.update") && shipment.status !== "ENTREGADO" && <button className="button primary" onClick={() => setUpdating(shipment)}><Send size={14}/> Actualizar estado</button>}
+        {user?.role === "DRIVER" && shipment.status === "ASIGNADO" && <button className="button success" onClick={() => void acceptShipment(shipment)}><CheckCircle2 size={14}/> Aceptar carga</button>}
+        {user?.role === "DRIVER" && can("shipments.update") && ["EN_TRANSITO","EN_ADUANA","INCIDENCIA","RETRASADO"].includes(shipment.status) && <button className="button primary" onClick={() => setUpdating(shipment)}><Send size={14}/> Actualizar estado</button>}
+        {shipment.status === "PENDIENTE_RECEPCION" && can("purchases.receive") && <button className="button success" onClick={() => void confirmReception(shipment)}><PackageCheck size={14}/> Confirmar recepción</button>}
       </footer>
     </article>)}</div>}
-    <AssignModal shipment={assigning} open={Boolean(assigning)} vehicles={vehicles} drivers={drivers} onClose={() => setAssigning(null)} onSaved={async () => { setAssigning(null); setMessage("Transporte asignado y notificación enviada."); await load(); }} />
+    <AssignModal shipment={assigning} open={Boolean(assigning)} vehicles={vehicles} drivers={drivers} onClose={() => setAssigning(null)} onSaved={async () => { setAssigning(null); setMessage("Transporte asignado. El conductor debe aceptar la carga para iniciar el traslado."); await load(); }} />
     <EventModal shipment={updating} open={Boolean(updating)} onClose={() => setUpdating(null)} onSaved={async () => { setUpdating(null); setMessage("Estado actualizado en tiempo real."); await load(); }} />
     <CreateShipmentModal open={createOpen} routes={routes} products={products} warehouses={warehouses} purchaseOrders={purchaseOrders} onClose={() => setCreateOpen(false)} onSaved={async () => { setCreateOpen(false); setMessage("Envío creado con inventario vinculado y listo para asignación."); await load(); }} />
     <FleetModal open={fleetOpen} vehicles={vehicles} onClose={() => setFleetOpen(false)} onSaved={load}/>
   </>;
+}
+
+function shipmentStage(status: string): number {
+  if (status === "ENTREGADO") return 4;
+  if (status === "PENDIENTE_RECEPCION") return 3;
+  if (["EN_TRANSITO", "EN_ADUANA", "INCIDENCIA", "RETRASADO"].includes(status)) return 2;
+  if (status === "ASIGNADO") return 1;
+  return 0;
+}
+
+function shipmentNextAction(shipment: Shipment): string {
+  if (shipment.status === "PREPARANDO") {
+    return "Logística debe asignar un vehículo y un transportista disponible.";
+  }
+  if (shipment.status === "ASIGNADO") {
+    return "El transportista asignado debe aceptar la carga; recién entonces inicia el viaje.";
+  }
+  if (["EN_TRANSITO", "EN_ADUANA", "INCIDENCIA", "RETRASADO"].includes(shipment.status)) {
+    return shipment.destination_warehouse_id
+      ? "El transportista actualiza el recorrido y registra el arribo al almacén."
+      : "El transportista actualiza el recorrido y confirma la entrega al cliente final.";
+  }
+  if (shipment.status === "PENDIENTE_RECEPCION") {
+    return "Inventario debe revisar físicamente la carga y confirmar su ingreso.";
+  }
+  return "Flujo completado y existencias conciliadas.";
 }
 
 function AssignModal({ shipment, open, vehicles, drivers, onClose, onSaved }: { shipment: Shipment | null; open: boolean; vehicles: Vehicle[]; drivers: Driver[]; onClose: () => void; onSaved: () => Promise<void> }) {
@@ -102,7 +160,7 @@ function AssignModal({ shipment, open, vehicles, drivers, onClose, onSaved }: { 
   const availableDrivers = drivers.filter((driver) => driver.available && driver.license_valid);
   const [vehicleId, setVehicleId] = useState(""); const [driverId, setDriverId] = useState(""); const [error, setError] = useState("");
   const submit = async (event: FormEvent) => { event.preventDefault(); if (!shipment) return; try { await api.patch(`/transporte/envios/${shipment.id}/asignar`, { vehicle_id: Number(vehicleId), driver_id: Number(driverId) }); await onSaved(); } catch (cause) { setError(getErrorMessage(cause)); } };
-  return <Modal open={open} onClose={onClose} title={`Asignar transporte · ${shipment?.tracking_code ?? ""}`} width="620px">{error && <Alert>{error}</Alert>}<div className="assignment-summary"><div><small>Peso</small><strong>{shipment?.total_weight_kg} kg</strong></div><div><small>Volumen</small><strong>{shipment?.total_volume_m3} m³</strong></div><div><small>Ruta</small><strong>{shipment?.origin} → {shipment?.destination}</strong></div></div><form onSubmit={submit}><div className="form-grid"><label className="field"><span>Vehículo compatible *</span><select value={vehicleId} onChange={(event) => setVehicleId(event.target.value)} required><option value="">Seleccione…</option>{compatible.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.plate} · {vehicle.type} · {vehicle.capacity_kg} kg</option>)}</select></label><label className="field"><span>Transportista disponible *</span><select value={driverId} onChange={(event) => setDriverId(event.target.value)} required><option value="">Seleccione…</option>{availableDrivers.map((driver) => <option key={driver.id} value={driver.id}>{driver.full_name} · Lic. {driver.license_number}</option>)}</select></label></div>{(!compatible.length || !availableDrivers.length) && <Alert type="warning">No existen suficientes recursos compatibles y disponibles.</Alert>}<div className="form-actions"><button type="button" className="button" onClick={onClose}>Cancelar</button><button className="button primary" disabled={!compatible.length || !availableDrivers.length}>Asignar y notificar</button></div></form></Modal>;
+  return <Modal open={open} onClose={onClose} title={`Asignar transporte · ${shipment?.tracking_code ?? ""}`} width="620px">{error && <Alert>{error}</Alert>}<div className="assignment-summary"><div><small>Peso</small><strong>{shipment?.total_weight_kg} kg</strong></div><div><small>Volumen</small><strong>{shipment?.total_volume_m3} m³</strong></div><div><small>Ruta</small><strong>{shipment?.origin} → {shipment?.destination}</strong></div></div><Alert type="warning">La asignación no inicia el viaje. El conductor recibirá la notificación y deberá aceptar la carga desde su sesión.</Alert><form onSubmit={submit}><div className="form-grid"><label className="field"><span>Vehículo compatible *</span><select value={vehicleId} onChange={(event) => setVehicleId(event.target.value)} required><option value="">Seleccione…</option>{compatible.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.plate} · {vehicle.type} · {vehicle.capacity_kg} kg</option>)}</select></label><label className="field"><span>Transportista disponible *</span><select value={driverId} onChange={(event) => setDriverId(event.target.value)} required><option value="">Seleccione…</option>{availableDrivers.map((driver) => <option key={driver.id} value={driver.id}>{driver.full_name} · Lic. {driver.license_number}</option>)}</select></label></div>{(!compatible.length || !availableDrivers.length) && <Alert type="warning">No existen suficientes recursos compatibles y disponibles.</Alert>}<div className="form-actions"><button type="button" className="button" onClick={onClose}>Cancelar</button><button className="button primary" disabled={!compatible.length || !availableDrivers.length}>Asignar y notificar</button></div></form></Modal>;
 }
 
 function EventModal({ shipment, open, onClose, onSaved }: { shipment: Shipment | null; open: boolean; onClose: () => void; onSaved: () => Promise<void> }) {
@@ -155,7 +213,7 @@ function EventModal({ shipment, open, onClose, onSaved }: { shipment: Shipment |
     {error && <Alert>{error}</Alert>}
     <form onSubmit={submit}>
       <div className="form-grid">
-        <label className="field full"><span>Evento *</span><select value={form.event_type} onChange={(event) => changeEventType(event.target.value)}><option value="UBICACION">Ubicación</option><option value="ESCALA">Escala</option><option value="ADUANA">Aduana</option><option value="INCIDENCIA">Incidencia</option><option value="RETRASO">Retraso</option><option value="RESOLUCION">Resolución de alerta</option><option value="ENTREGA">Entrega</option></select><small className="hint">Ubicación y escala conservan una incidencia, retraso o aduana activos. Use “Resolución de alerta” cuando la operación esté normalizada.</small></label>
+        <label className="field full"><span>Evento *</span><select value={form.event_type} onChange={(event) => changeEventType(event.target.value)}><option value="UBICACION">Ubicación</option><option value="ESCALA">Escala</option><option value="ADUANA">Aduana</option><option value="INCIDENCIA">Incidencia</option><option value="RETRASO">Retraso</option><option value="RESOLUCION">Resolución de alerta</option>{shipment?.destination_warehouse_id ? <option value="ARRIBO">Arribo al almacén</option> : <option value="ENTREGA">Entrega a cliente final</option>}</select><small className="hint">{shipment?.destination_warehouse_id ? "Al registrar el arribo, la carga quedará bloqueada hasta que Inventario confirme la recepción física." : "La entrega a cliente final cierra el envío. Ubicación y escala conservan las alertas activas."}</small></label>
         {form.event_type === "INCIDENCIA" && <label className="field full"><span>Tipo de incidencia *</span><select value={form.incident_type} onChange={(event) => setForm({ ...form, incident_type: event.target.value })} required><option value="MECANICA">Falla mecánica</option><option value="CLIMATICA">Condición climática</option><option value="ADUANA">Control aduanero</option><option value="TRAFICO">Tráfico, bloqueo o cierre vial</option><option value="SEGURIDAD">Seguridad de carga o conductor</option><option value="DOCUMENTACION">Documentación incompleta</option><option value="OTRA">Otra incidencia</option></select><small className="hint">Este dato aparecerá en transporte y en el rastreo público.</small></label>}
         {form.event_type === "RETRASO" && <label className="field full"><span>Demora estimada (minutos) *</span><input type="number" min="1" max="10080" value={form.delay_minutes} onChange={(event) => setForm({ ...form, delay_minutes: Number(event.target.value) })}/><small className="hint">Se conserva durante las actualizaciones de posición y se incorpora a la nueva ETA.</small></label>}
         <label className="field"><span>Latitud *</span><input type="number" step="any" value={form.latitude} onChange={(event) => setForm({ ...form, latitude: Number(event.target.value) })}/></label>
@@ -175,7 +233,8 @@ const eventDefaults: Record<string, string> = {
   INCIDENCIA: "Describa la incidencia, su impacto y la acción inmediata",
   RETRASO: "Describa la causa del retraso y el nuevo compromiso de entrega",
   RESOLUCION: "Describa la solución aplicada y confirme que el transporte puede continuar",
-  ENTREGA: "Entrega confirmada y carga recibida conforme",
+  ARRIBO: "Carga arribó al almacén y queda pendiente de revisión por Inventario",
+  ENTREGA: "Entrega al cliente final confirmada conforme",
 };
 
 function incidentTypeLabel(value: string | null) {
@@ -210,7 +269,9 @@ function CreateShipmentModal({ open, routes, products, warehouses, purchaseOrder
   const [form, setForm] = useState({ mode: "DISTRIBUCION", route_id: "", purchase_order_id: "", origin_warehouse_id: "", destination_warehouse_id: "", product_id: "", quantity: 1, total_weight_kg: 1000, total_volume_m3: 5 });
   const [error, setError] = useState("");
   const inbound = form.mode === "COMPRA";
-  const eligibleOrders = purchaseOrders.filter((order) => !order.shipment_id && ["APROBADA", "ENVIADA", "CONFIRMADA"].includes(order.status));
+  const eligibleOrders = purchaseOrders.filter(
+    (order) => !order.shipment_id && order.status === "CONFIRMADA",
+  );
   const compatibleRoutes = routes.filter((route) => route.purpose === "AMBOS" || route.purpose === (inbound ? "ENTRADA_COMPRA" : "SALIDA_DISTRIBUCION"));
   const selectedRoute = routes.find((route) => route.id === Number(form.route_id));
 
@@ -268,13 +329,13 @@ function CreateShipmentModal({ open, routes, products, warehouses, purchaseOrder
     <form onSubmit={submit}>
       <div className={`flow-choice ${inbound ? "inbound" : "outbound"}`}>
         <strong>{inbound ? "Este camión viene hacia nosotros" : "Este camión sale desde nosotros"}</strong>
-        <span>{inbound ? "Recoge la compra en el origen de la ruta y la entrega en el almacén receptor. El inventario aumenta al confirmar la entrega." : "Toma productos de un almacén propio. El stock se reserva al crear y se descuenta al asignar el transporte."}</span>
+        <span>{inbound ? "Solo aparecen órdenes ya confirmadas por el proveedor. El conductor registra el arribo y después Inventario confirma el ingreso." : "Toma productos de un almacén propio. El stock se reserva al crear y se descuenta cuando el conductor acepta la carga."}</span>
       </div>
       <div className="form-grid">
         <label className="field full"><span>Tipo de flujo *</span><select value={form.mode} onChange={(event) => changeMode(event.target.value)}><option value="DISTRIBUCION">Salida de distribución · sale de nuestro almacén</option><option value="COMPRA">Entrada de compra · llega a nuestro almacén</option></select></label>
         <label className="field full"><span>Ruta compatible *</span><select value={form.route_id} onChange={(event) => changeRoute(event.target.value)} required><option value="">Seleccione origen → destino…</option>{compatibleRoutes.map((route) => <option key={route.id} value={route.id}>{route.origin_name} → {route.destination_name} · {route.transport_mode} · {route.purpose === "AMBOS" ? "uso mixto" : inbound ? "entrada" : "salida"}</option>)}</select><small className="hint">La flecha indica exactamente desde dónde sale y a dónde llega el vehículo.</small></label>
         {selectedRoute && <div className="selected-route full"><div><small>SALE DE</small><strong>{selectedRoute.origin_name}</strong></div><span>→</span><div><small>LLEGA A</small><strong>{selectedRoute.destination_name}</strong></div></div>}
-        {inbound ? <label className="field full"><span>Orden de compra aprobada *</span><select value={form.purchase_order_id} onChange={(event) => setForm({ ...form, purchase_order_id: event.target.value })} required><option value="">Seleccione orden y proveedor…</option>{eligibleOrders.map((order) => <option key={order.id} value={order.id}>{order.code} · {order.supplier} · {order.items.length} producto(s)</option>)}</select><small className="hint">Los productos y cantidades se copian de esta orden; no se escriben manualmente.</small></label> : <>
+        {inbound ? <label className="field full"><span>Orden confirmada por proveedor *</span><select value={form.purchase_order_id} onChange={(event) => setForm({ ...form, purchase_order_id: event.target.value })} required><option value="">Seleccione orden y proveedor…</option>{eligibleOrders.map((order) => <option key={order.id} value={order.id}>{order.code} · {order.supplier} · {order.items.length} producto(s)</option>)}</select><small className="hint">Los productos y cantidades se copian de esta orden; no se escriben manualmente.</small></label> : <>
           <label className="field"><span>Almacén del que sale *</span><select value={form.origin_warehouse_id} onChange={(event) => setForm({ ...form, origin_warehouse_id: event.target.value })} required><option value="">Seleccione…</option>{warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.code} · {warehouse.name}</option>)}</select></label>
           <label className="field"><span>Producto a despachar *</span><select value={form.product_id} onChange={(event) => setForm({ ...form, product_id: event.target.value })} required><option value="">Seleccione…</option>{products.map((product) => <option key={product.id} value={product.id}>{product.sku} · {product.name}</option>)}</select></label>
           <label className="field"><span>Cantidad *</span><input type="number" min="1" value={form.quantity} onChange={(event) => setForm({ ...form, quantity: Number(event.target.value) })}/></label>
@@ -284,7 +345,7 @@ function CreateShipmentModal({ open, routes, products, warehouses, purchaseOrder
         <label className="field"><span>Volumen total (m³) *</span><input type="number" min=".1" step=".1" value={form.total_volume_m3} onChange={(event) => setForm({ ...form, total_volume_m3: Number(event.target.value) })}/></label>
       </div>
       {!compatibleRoutes.length && <Alert type="warning">No existe una ruta compatible. Cree primero una ruta con el propósito adecuado.</Alert>}
-      {inbound && !eligibleOrders.length && <Alert type="warning">No hay órdenes aprobadas disponibles. Compras debe crear y aprobar una orden que todavía no esté recibida ni vinculada a otro envío.</Alert>}
+      {inbound && !eligibleOrders.length && <Alert type="warning">No hay órdenes confirmadas disponibles. Compras debe aprobar una orden y el proveedor correspondiente debe confirmarla desde su portal.</Alert>}
       <div className="form-actions"><button type="button" className="button" onClick={onClose}>Cancelar</button><button className="button primary" disabled={!compatibleRoutes.length || (inbound && !eligibleOrders.length)}><ClipboardPlus size={14}/> Crear envío</button></div>
     </form>
   </Modal>;

@@ -25,7 +25,15 @@ api.interceptors.response.use(
 
 export function getErrorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {
-    return error.response?.data?.message ?? error.message;
+    const data = error.response?.data as
+      | { message?: string; errors?: Array<{ path?: Array<string | number>; message?: string }> }
+      | undefined;
+    const issue = data?.errors?.[0];
+    if (issue?.message) {
+      const field = issue.path?.length ? ` (${issue.path.join(".")})` : "";
+      return `${issue.message}${field}`;
+    }
+    return data?.message ?? error.message;
   }
   return error instanceof Error ? error.message : "Ocurrió un error inesperado";
 }

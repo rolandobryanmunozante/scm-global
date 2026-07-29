@@ -168,38 +168,38 @@ supplier_document_url = documento informado
 4. Muestre vehículo, conductor, peso, volumen, ubicación, estado y ETA.
 5. Abra **Mapa global** para explicar la visibilidad geográfica.
 
-### Paso 7: el Transportista actualiza y entrega
+### Paso 7: el Transportista actualiza y registra el arribo
 
 1. Inicie sesión como `transportista@scm.local`.
 2. Abra el envío asignado `SCM-BO-2026-001`.
 3. Registre primero un evento **Aduana** con una descripción como
    `Control aduanero completado sin observaciones`.
 4. Muestre en otra pestaña cómo el rastreo incorpora el evento.
-5. Registre finalmente **Entrega**, usando como descripción
-   `Carga recibida y documento firmado en Centro Lima`.
+5. Registre finalmente **Arribo al almacén**, usando como descripción
+   `Carga arribó a Centro Lima y queda pendiente de revisión física`.
 6. Puede usar `https://example.com/evidencia-entrega-demo.jpg` como evidencia.
 
-La entrega ejecuta una sola transacción:
+El arribo no modifica inventario:
 
 ```text
-shipment.status = ENTREGADO
-purchase_order.status = RECIBIDA
-stocks[Centro Lima, ELEC-002] += 110
-inventory_movements += ENTRADA / COMPRA
-shipment_events += ENTREGA
+shipment.status = PENDIENTE_RECEPCION
+purchase_order.status = ENVIADA
+stocks[Centro Lima, ELEC-002] = sin cambio
+shipment_events += ARRIBO
 ```
 
-### Paso 8: Inventario valida el resultado
+### Paso 8: Inventario revisa y confirma el resultado
 
 1. Inicie sesión como `inventario@scm.local`.
-2. Abra **Inventario** y filtre el almacén **Centro Lima**.
-3. Busque `ELEC-002` y muestre la existencia actualizada.
-4. Abra sus movimientos y localice la entrada relacionada con la compra.
-5. Use **Trazabilidad de producto** para relacionar proveedor, orden, envío y stock.
+2. Abra **Órdenes de compra** o **Transporte**, localice la carga pendiente y pulse
+   **Confirmar recepción** después de explicar la revisión física.
+3. Abra **Inventario** y filtre el almacén **Centro Lima**.
+4. Busque `ELEC-002` y muestre la existencia actualizada.
+5. Abra sus movimientos y localice la entrada relacionada con la compra.
+6. Use **Trazabilidad de producto** para relacionar proveedor, orden, envío y stock.
 
-Mensaje para la exposición: “La entrega logística y la recepción contable del
-inventario son atómicas; no puede quedar el envío entregado sin que se registre el
-stock”.
+Mensaje para la exposición: “El conductor prueba que llegó; Inventario prueba que
+recibió. Ninguno puede ejecutar la responsabilidad del otro”.
 
 ## 4. Acto B: distribución entre almacenes
 
@@ -236,6 +236,14 @@ available_quantity -= 2
 Al asignarlo:
 
 ```text
+current_quantity = sin cambio
+reserved_quantity = 2
+shipment.status = ASIGNADO
+```
+
+10. Inicie sesión como Transportista y pulse **Aceptar carga**. Recién entonces:
+
+```text
 current_quantity -= 2
 reserved_quantity -= 2
 inventory_movements += SALIDA / DESPACHO
@@ -247,8 +255,9 @@ shipment.status = EN_TRANSITO
 1. Inicie sesión como `transportista@scm.local`.
 2. Abra el nuevo envío y publique una **Ubicación** o **Escala**.
 3. Como `cliente@scm.local`, consulte el código de rastreo y muestre el nuevo evento.
-4. Regrese al Transportista y publique **Entrega**.
-5. Actualice el rastreo para mostrar el estado final.
+4. Regrese al Transportista y publique **Arribo al almacén**.
+5. Inicie sesión como Inventario y confirme la recepción física.
+6. Actualice el rastreo para mostrar el estado final.
 
 Si el destino es **Centro Lima**:
 
@@ -290,10 +299,9 @@ Frase de cierre sugerida:
 | Administrar accesos | Administrador | usuarios, roles, permisos | Separación de funciones |
 | Gestionar compra | Compras | proveedor, orden, productos | Orden aprobada |
 | Confirmar orden | Proveedor | fecha, documento | Orden confirmada |
-| Preparar transporte | Logística | ruta, almacenes, vehículo | Envío asignado |
-| Reportar recorrido | Transportista | ubicación, aduana, evidencia | Seguimiento en tiempo real |
-| Entregar compra | Transportista | evento de entrega | Orden recibida y entrada de stock |
-| Verificar inventario | Inventario | stock y movimientos | Existencia conciliada |
+| Preparar transporte | Logística | ruta, almacenes, vehículo | Envío asignado, aún sin salida |
+| Aceptar y reportar recorrido | Transportista | aceptación, ubicación, aduana, evidencia | Seguimiento y arribo registrado |
+| Recibir compra | Inventario | revisión física, orden, almacén | Orden recibida y entrada de stock |
 | Consultar rastreo | Cliente | código y eventos públicos | ETA y estado sin acceso interno |
 | Analizar resultado | Gerencia | KPI y reportes | Decisión ejecutiva |
 | Revisar evidencia | Auditoría | bitácora y trazabilidad | Control verificable |

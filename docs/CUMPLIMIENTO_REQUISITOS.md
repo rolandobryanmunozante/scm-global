@@ -63,7 +63,7 @@ Los tokens no conservan permisos obsoletos: cada petición valida que el usuario
 
 - Una orden recibida exige usuario, fecha y almacén de recepción.
 - Un envío de compra copia exactamente los productos/cantidades de su orden y una orden solo puede vincularse a un envío.
-- Un envío de distribución reserva stock al crearse y lo descuenta al asignarse el transporte.
+- Un envío de distribución reserva stock al crearse y lo descuenta cuando el transportista acepta la carga asignada.
 - Una entrega dirigida a un almacén crea los movimientos de entrada correspondientes.
 - Los cambios de inventario, compras, usuarios, rutas, flota y proveedores se registran en auditoría.
 - `database/verify.sql` comprueba permisos, licencias, vínculos, detalles obligatorios, stock y coincidencia orden–envío.

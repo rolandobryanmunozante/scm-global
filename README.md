@@ -82,7 +82,10 @@ Todos los usuarios demostrativos utilizan la contraseña `SCM2026!`:
 | Gerencia | `gerente@scm.local` |
 | Cliente | `cliente@scm.local` |
 | Auditoría | `auditor@scm.local` |
-| Proveedor | `proveedor@scm.local` |
+| Proveedor Andes Tech | `proveedor@scm.local` |
+| Proveedor Brasil Components | `proveedor.brasil@scm.local` |
+| Proveedor Pacífico Foods | `proveedor.pacifico@scm.local` |
+| Proveedor Salud Global | `proveedor.salud@scm.local` |
 
 Cambie `JWT_SECRET` y las contraseñas de `.env` antes de un despliegue público.
 
@@ -171,6 +174,10 @@ Las migraciones se ejecutan automáticamente en una base nueva:
 - `database/migrations/007_operational_demo_data.sql`: flujos correlacionados en varias etapas para todos los roles.
 - `database/migrations/008_shipment_delay_minutes.sql`: duración persistente de retrasos y alertas operativas.
 - `database/migrations/009_supplier_catalogs_and_reservation_consistency.sql`: catálogos por proveedor, reservas vinculadas a envíos e incidencias de transporte clasificadas.
+- `database/migrations/010_operational_workflow_enums.sql`: estados de asignación, aceptación y recepción física.
+- `database/migrations/011_operational_handoffs_and_route_countries.sql`: relevo estricto entre roles, cuentas de proveedor y normalización de países en rutas.
+- `database/migrations/012_repair_historical_direct_receipts.sql`: reconstrucción auditable de recepciones antiguas que no tenían envío.
+- `database/migrations/013_route_purpose_endpoint_consistency.sql`: clasificación y restricción de rutas según sus almacenes extremos.
 
 `database/migrate.sh` registra cada archivo aplicado en `schema_migrations`. La información persiste en el volumen `scm_postgres_data`, normalmente prefijado con el nombre del proyecto Compose.
 

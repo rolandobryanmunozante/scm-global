@@ -316,8 +316,11 @@ erDiagram
   orden de compra.
 - Una ruta específica solo admite envíos de su propósito; `AMBOS` permite los dos
   tipos de flujo.
+- La asignación deja el envío `ASIGNADO`; solo la aceptación del conductor inicia
+  el viaje y el despacho.
+- Un arribo a almacén queda `PENDIENTE_RECEPCION` y no cambia existencias.
 - En una compra transportada, la orden `RECIBIDA` y el envío `ENTREGADO` se
-  confirman juntos dentro de la misma transacción.
+  confirman juntos cuando Inventario acepta físicamente la carga.
 - Los movimientos de inventario y registros de auditoría son inmutables.
 - Las recepciones, reservas, despachos y entregas se ejecutan dentro de
   transacciones para mantener sincronizadas todas las tablas relacionadas.

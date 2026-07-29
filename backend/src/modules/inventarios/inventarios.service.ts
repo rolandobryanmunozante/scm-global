@@ -20,8 +20,11 @@ export async function receivePurchaseOrder(
   if (order.status === "RECIBIDA") {
     throw new AppError(409, "La orden de compra ya fue recibida");
   }
-  if (!["APROBADA", "ENVIADA", "CONFIRMADA"].includes(String(order.status))) {
-    throw new AppError(409, "La orden debe estar aprobada o confirmada para recibirla");
+  if (order.status !== "ENVIADA") {
+    throw new AppError(
+      409,
+      "La orden solo puede recibirse después de que el transportista acepte y complete el traslado",
+    );
   }
   const warehouse = await client.query("SELECT id FROM warehouses WHERE id=$1 AND active", [warehouseId]);
   if (!warehouse.rowCount) throw new AppError(400, "El almacén de recepción no existe o está inactivo");
@@ -75,6 +78,129 @@ export async function receivePurchaseOrder(
     [orderId, userId, warehouseId],
   );
   return { order: updated.rows[0], productIds };
+}
+
+export async function confirmShipmentReception(
+  client: PoolClient,
+  shipmentId: number,
+  userId: number,
+): Promise<{
+  shipment: Record<string, unknown>;
+  order: Record<string, unknown> | null;
+  productIds: number[];
+  warehouseId: number;
+}> {
+  const shipmentResult = await client.query(
+    `SELECT shipment.*,route.destination_latitude,route.destination_longitude
+     FROM shipments shipment
+     JOIN routes route ON route.id=shipment.route_id
+     WHERE shipment.id=$1
+     FOR UPDATE OF shipment`,
+    [shipmentId],
+  );
+  const shipment = shipmentResult.rows[0];
+  if (!shipment) throw new AppError(404, "Envío no encontrado");
+  if (shipment.status !== "PENDIENTE_RECEPCION") {
+    throw new AppError(
+      409,
+      "El transportista todavía no registró el arribo de la carga al almacén",
+    );
+  }
+  if (!shipment.destination_warehouse_id) {
+    throw new AppError(409, "El envío no tiene un almacén de recepción");
+  }
+  if (shipment.inventory_received_at) {
+    throw new AppError(409, "El inventario de este envío ya fue recibido");
+  }
+
+  const warehouseId = Number(shipment.destination_warehouse_id);
+  const productIds: number[] = [];
+  let order: Record<string, unknown> | null = null;
+
+  if (shipment.purchase_order_id) {
+    const received = await receivePurchaseOrder(
+      client,
+      Number(shipment.purchase_order_id),
+      warehouseId,
+      userId,
+    );
+    order = received.order;
+    productIds.push(...received.productIds);
+  } else {
+    const items = await client.query(
+      "SELECT product_id,quantity FROM shipment_items WHERE shipment_id=$1 ORDER BY product_id",
+      [shipmentId],
+    );
+    for (const item of items.rows) {
+      await client.query(
+        `INSERT INTO stocks(product_id,warehouse_id,current_quantity)
+         VALUES($1,$2,0) ON CONFLICT(product_id,warehouse_id) DO NOTHING`,
+        [item.product_id, warehouseId],
+      );
+      const stockResult = await client.query(
+        "SELECT * FROM stocks WHERE product_id=$1 AND warehouse_id=$2 FOR UPDATE",
+        [item.product_id, warehouseId],
+      );
+      const stock = stockResult.rows[0];
+      const resulting = Number(stock.current_quantity) + Number(item.quantity);
+      await client.query(
+        "UPDATE stocks SET current_quantity=$2,updated_at=NOW() WHERE id=$1",
+        [stock.id, resulting],
+      );
+      await client.query(
+        `INSERT INTO inventory_movements
+         (product_id,warehouse_id,user_id,movement_type,reason,quantity,previous_quantity,
+          resulting_quantity,reference_type,reference_id,observations)
+         VALUES($1,$2,$3,'ENTRADA','TRASLADO_ENVIO',$4,$5,$6,'shipment',$7,$8)`,
+        [
+          item.product_id,
+          warehouseId,
+          userId,
+          item.quantity,
+          stock.current_quantity,
+          resulting,
+          shipmentId,
+          `Recepción física del envío ${shipment.tracking_code}`,
+        ],
+      );
+      productIds.push(Number(item.product_id));
+    }
+  }
+
+  await client.query(
+    `INSERT INTO shipment_events(
+       shipment_id,user_id,event_type,status,description,latitude,longitude
+     ) VALUES(
+       $1,$2,'ENTREGA','ENTREGADO',
+       'Recepción física confirmada por Inventario; existencias actualizadas',$3,$4
+     )`,
+    [
+      shipmentId,
+      userId,
+      shipment.destination_latitude,
+      shipment.destination_longitude,
+    ],
+  );
+  const updated = await client.query(
+    `UPDATE shipments
+     SET status='ENTREGADO',
+         current_latitude=$2,
+         current_longitude=$3,
+         delivered_at=NOW(),
+         inventory_received_at=NOW(),
+         delay_minutes=0,
+         updated_at=NOW()
+     WHERE id=$1
+     RETURNING *`,
+    [shipmentId, shipment.destination_latitude, shipment.destination_longitude],
+  );
+
+  return {
+    shipment: updated.rows[0],
+    order,
+    productIds,
+    warehouseId,
+  };
 }
 
 export async function generateAutomaticPurchaseOrders(): Promise<number> {
