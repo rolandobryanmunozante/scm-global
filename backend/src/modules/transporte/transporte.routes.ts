@@ -21,6 +21,31 @@ const vehicleSchema = z.object({
 });
 
 router.get(
+  "/rastreo",
+  asyncHandler(async (request, response) => {
+    const query = z
+      .object({
+        q: z.string().trim().min(2).max(100),
+        limit: z.coerce.number().int().min(1).max(10).default(6),
+      })
+      .parse(request.query);
+    const result = await pool.query(
+      `SELECT tracking_code,origin,destination,status,eta_at
+       FROM shipments
+       WHERE tracking_code ILIKE '%'||$1||'%'
+          OR origin ILIKE '%'||$1||'%'
+          OR destination ILIKE '%'||$1||'%'
+       ORDER BY
+         CASE WHEN tracking_code ILIKE $1||'%' THEN 0 ELSE 1 END,
+         created_at DESC
+       LIMIT $2`,
+      [query.q, query.limit],
+    );
+    response.json(result.rows);
+  }),
+);
+
+router.get(
   "/rastreo/:code",
   asyncHandler(async (request, response) => {
     const code = z.string().trim().min(5).max(30).parse(request.params.code);
@@ -44,8 +69,14 @@ router.get(
                    ELSE GREATEST(s.delay_minutes,
                      GREATEST(ROUND(EXTRACT(EPOCH FROM (NOW()-s.eta_at))/60),0)::INTEGER)
               END AS delay_minutes,
-              (SELECT COUNT(*)::INTEGER FROM shipment_events e
-               WHERE e.shipment_id=s.id AND e.event_type='INCIDENCIA') AS incident_count
+               (SELECT COUNT(*)::INTEGER FROM shipment_events e
+                WHERE e.shipment_id=s.id AND e.event_type='INCIDENCIA') AS incident_count,
+               (SELECT e.incident_type FROM shipment_events e
+                WHERE e.shipment_id=s.id AND e.event_type='INCIDENCIA'
+                ORDER BY e.created_at DESC LIMIT 1) AS latest_incident_type,
+               (SELECT e.description FROM shipment_events e
+                WHERE e.shipment_id=s.id AND e.event_type='INCIDENCIA'
+                ORDER BY e.created_at DESC LIMIT 1) AS latest_incident_description
        FROM shipments s
        JOIN routes r ON r.id=s.route_id
        LEFT JOIN vehicles v ON v.id=s.vehicle_id
@@ -56,7 +87,8 @@ router.get(
     const shipment = shipmentResult.rows[0];
     if (!shipment) throw new AppError(404, "Código de rastreo no encontrado");
     const events = await pool.query(
-      `SELECT e.id,e.event_type,e.status,e.description,e.latitude,e.longitude,e.evidence_url,e.created_at,
+      `SELECT e.id,e.event_type,e.status,e.description,e.incident_type,
+              e.latitude,e.longitude,e.evidence_url,e.created_at,
               u.full_name AS user_name
        FROM shipment_events e LEFT JOIN users u ON u.id=e.user_id
        WHERE e.shipment_id=$1 ORDER BY e.created_at`,
@@ -204,9 +236,15 @@ router.get(
                 WHEN NOW()-COALESCE(v.last_position_at,s.updated_at) <= INTERVAL '60 minutes' THEN 'RECIENTE'
                 ELSE 'SIN_ACTUALIZAR'
               END AS position_state,
-              (SELECT COUNT(*)::INTEGER FROM shipment_events event
-               WHERE event.shipment_id=s.id AND event.event_type='INCIDENCIA') AS incident_count,
-              json_agg(json_build_object('product_id',p.id,'sku',p.sku,'product',p.name,'quantity',si.quantity))
+               (SELECT COUNT(*)::INTEGER FROM shipment_events event
+                WHERE event.shipment_id=s.id AND event.event_type='INCIDENCIA') AS incident_count,
+               (SELECT event.incident_type FROM shipment_events event
+                WHERE event.shipment_id=s.id AND event.event_type='INCIDENCIA'
+                ORDER BY event.created_at DESC LIMIT 1) AS latest_incident_type,
+               (SELECT event.description FROM shipment_events event
+                WHERE event.shipment_id=s.id AND event.event_type='INCIDENCIA'
+                ORDER BY event.created_at DESC LIMIT 1) AS latest_incident_description,
+               json_agg(json_build_object('product_id',p.id,'sku',p.sku,'product',p.name,'quantity',si.quantity))
                 FILTER (WHERE p.id IS NOT NULL) AS items
        FROM shipments s
        JOIN routes r ON r.id=s.route_id
@@ -421,10 +459,30 @@ router.post(
           "UBICACION",
         ]),
         description: z.string().trim().min(3).max(1000),
+        incident_type: z
+          .enum(["MECANICA", "CLIMATICA", "ADUANA", "TRAFICO", "SEGURIDAD", "DOCUMENTACION", "OTRA"])
+          .nullable()
+          .optional(),
         latitude: z.coerce.number().min(-90).max(90),
         longitude: z.coerce.number().min(-180).max(180),
         delay_minutes: z.coerce.number().int().min(1).max(10080).optional(),
         evidence_url: z.string().url().nullable().optional(),
+      })
+      .superRefine((value, context) => {
+        if (value.event_type === "INCIDENCIA" && !value.incident_type) {
+          context.addIssue({
+            code: "custom",
+            path: ["incident_type"],
+            message: "Debe indicar el tipo de incidencia",
+          });
+        }
+        if (value.event_type === "RETRASO" && !value.delay_minutes) {
+          context.addIssue({
+            code: "custom",
+            path: ["delay_minutes"],
+            message: "Debe indicar los minutos estimados de retraso",
+          });
+        }
       })
       .parse(request.body);
     const client = await pool.connect();
@@ -543,14 +601,15 @@ router.post(
             );
       const event = await client.query(
         `INSERT INTO shipment_events
-          (shipment_id,user_id,event_type,status,description,latitude,longitude,evidence_url)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+          (shipment_id,user_id,event_type,status,description,incident_type,latitude,longitude,evidence_url)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
         [
           shipmentId,
           request.user!.id,
           input.event_type,
           status,
           input.description,
+          input.event_type === "INCIDENCIA" ? input.incident_type : null,
           input.latitude,
           input.longitude,
           input.evidence_url ?? null,

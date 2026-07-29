@@ -12,9 +12,11 @@ import {
   LogOut,
   Map,
   Menu,
+  Moon,
   PackageSearch,
   Route,
   Settings,
+  Sun,
   Truck,
   Users,
   X,
@@ -24,6 +26,7 @@ import { useTranslation } from "react-i18next";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { NavLink, useLocation } from "../router";
+import { useTheme } from "../theme";
 
 interface NavItem {
   to: string;
@@ -40,6 +43,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [unread, setUnread] = useState(0);
   const location = useLocation();
+  const { theme, toggleTheme } = useTheme();
 
   const items = useMemo<NavItem[]>(
     () => [
@@ -186,6 +190,14 @@ export function AppLayout({ children }: { children: ReactNode }) {
             <strong>Bolivia · Región Andina</strong>
           </div>
           <div className="topbar-actions">
+            <button
+              className="topbar-icon theme-toggle"
+              onClick={toggleTheme}
+              aria-label={theme === "dark" ? "Activar tema claro" : "Activar tema oscuro"}
+              title={theme === "dark" ? "Tema claro" : "Tema oscuro"}
+            >
+              {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
             <label className="language-control">
               <Languages size={17} />
               <select

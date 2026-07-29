@@ -1,4 +1,4 @@
-import { ArrowDownToLine, ArrowRightLeft, ArrowUpFromLine, CheckCircle2, Edit3, PackagePlus, Plus, RotateCcw, Search, Trash2, Warehouse } from "lucide-react";
+import { ArrowDownToLine, ArrowRightLeft, ArrowUpFromLine, CheckCircle2, CircleHelp, Edit3, PackagePlus, Plus, RotateCcw, Search, Trash2, Truck, Warehouse } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { io } from "socket.io-client";
@@ -12,7 +12,10 @@ interface Category { id: number; name: string }
 interface StockRow {
   product_id: number; sku: string; product: string; category: string; minimum_stock: number; maximum_stock: number;
   global_stock: number; available: number;
-  warehouses: Array<{ warehouse_id: number; warehouse: string; code: string; current: number; reserved: number; available: number }>;
+  warehouses: Array<{
+    warehouse_id: number; warehouse: string; code: string; current: number; reserved: number; available: number;
+    reservations: Array<{ shipment_id: number; tracking_code: string; quantity: number; destination: string; reserved_at: string }>;
+  }>;
 }
 interface Movement { id: number; movement_type: string; reason: string; quantity: number; previous_quantity: number; resulting_quantity: number; observations: string | null; created_at: string; sku: string; product: string; warehouse: string; user_name: string }
 interface Transfer { id: number; origin_warehouse: string; destination_warehouse: string; status: string; created_at: string; received_at: string | null; created_by_name: string; items: Array<{ product_id: number; sku: string; product: string; quantity: number }> }
@@ -35,6 +38,12 @@ export function InventoryPage() {
   const [transferOpen, setTransferOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | "new" | null>(null);
   const [editingWarehouse, setEditingWarehouse] = useState<WarehouseData | "new" | null>(null);
+  const [reservationDetail, setReservationDetail] = useState<{
+    product: string;
+    warehouse: string;
+    reserved: number;
+    reservations: StockRow["warehouses"][number]["reservations"];
+  } | null>(null);
 
   const load = useCallback(async () => {
     setError("");
@@ -105,7 +114,7 @@ export function InventoryPage() {
             <Warehouse size={16} />
             <div>
               <strong>Lectura de existencias</strong>
-              <span>Disponible = existencia actual menos unidades reservadas. Las reservas en cero se ocultan para facilitar la lectura.</span>
+              <span>Una reserva aparta stock para un envío de distribución en preparación. Pulse la cantidad reservada para ver el código y destino que la originaron.</span>
             </div>
           </div>
           <div className="toolbar">
@@ -127,7 +136,7 @@ export function InventoryPage() {
                   return <td key={warehouse.id} className="warehouse-stock-cell">
                     <strong>{current}</strong>
                     <small>{available} disponible{available === 1 ? "" : "s"}</small>
-                    {reserved > 0 && <span>{reserved} reservada{reserved === 1 ? "" : "s"}</span>}
+                    {reserved > 0 && <button className="reservation-link" type="button" onClick={() => setReservationDetail({ product: row.product, warehouse: warehouse.name, reserved, reservations: value?.reservations ?? [] })}><CircleHelp size={11}/>{reserved} reservada{reserved === 1 ? "" : "s"}</button>}
                   </td>;
                 })}
                 <td>{row.minimum_stock}</td><td><strong>{row.available}</strong><small>Global</small></td>
@@ -149,6 +158,16 @@ export function InventoryPage() {
       <TransferModal open={transferOpen} onClose={() => setTransferOpen(false)} onSaved={async () => { setTransferOpen(false); await load(); }} products={activeProducts} warehouses={activeWarehouses} />
       <ProductModal product={editingProduct === "new" ? null : editingProduct} open={editingProduct !== null} categories={categories} onClose={() => setEditingProduct(null)} onSaved={async () => { setEditingProduct(null); await load(); }}/>
       <WarehouseModal warehouse={editingWarehouse === "new" ? null : editingWarehouse} open={editingWarehouse !== null} onClose={() => setEditingWarehouse(null)} onSaved={async () => { setEditingWarehouse(null); await load(); }}/>
+      <Modal open={Boolean(reservationDetail)} onClose={() => setReservationDetail(null)} title="Origen de la reserva" width="560px">
+        {reservationDetail && <>
+          <div className="reservation-explanation"><CircleHelp size={19}/><div><strong>{reservationDetail.reserved} unidades de {reservationDetail.product}</strong><span>Están apartadas en {reservationDetail.warehouse}; siguen físicamente allí, pero no pueden usarse en otro despacho.</span></div></div>
+          <div className="reservation-list">
+            {reservationDetail.reservations.map((reservation) => <article key={reservation.shipment_id}><Truck size={16}/><div><strong>{reservation.tracking_code}</strong><span>{reservation.quantity} unidades · destino {reservation.destination}</span><small>Reservado {formatDate(reservation.reserved_at, true)}</small></div><a className="button" href={`/rastreo/${reservation.tracking_code}`}>Ver envío</a></article>)}
+          </div>
+          {!reservationDetail.reservations.length && <Alert type="warning">No existe un envío activo que justifique esta reserva. Ejecute la migración más reciente para reconciliar el inventario.</Alert>}
+          <div className="form-actions"><button className="button primary" onClick={() => setReservationDetail(null)}>Entendido</button></div>
+        </>}
+      </Modal>
     </>
   );
 }

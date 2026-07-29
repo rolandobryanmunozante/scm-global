@@ -225,11 +225,28 @@ router.get(
               p.minimum_stock, p.maximum_stock, p.unit_of_measure, p.unit_price,
               COALESCE(SUM(s.current_quantity),0)::INTEGER AS global_stock,
               COALESCE(SUM(s.current_quantity-s.reserved_quantity),0)::INTEGER AS available,
-              json_agg(json_build_object(
-                'warehouse_id', w.id, 'warehouse', w.name, 'code', w.code,
-                'current', s.current_quantity, 'reserved', s.reserved_quantity,
-                'available', s.current_quantity-s.reserved_quantity
-              ) ORDER BY w.name) FILTER (WHERE w.id IS NOT NULL) AS warehouses
+               json_agg(json_build_object(
+                 'warehouse_id', w.id, 'warehouse', w.name, 'code', w.code,
+                 'current', s.current_quantity, 'reserved', s.reserved_quantity,
+                 'available', s.current_quantity-s.reserved_quantity,
+                 'reservations', COALESCE((
+                   SELECT json_agg(json_build_object(
+                     'shipment_id',shipment.id,
+                     'tracking_code',shipment.tracking_code,
+                     'quantity',item.quantity,
+                     'destination',shipment.destination,
+                     'reserved_at',shipment.inventory_reserved_at
+                   ) ORDER BY shipment.inventory_reserved_at DESC)
+                   FROM shipments shipment
+                   JOIN shipment_items item ON item.shipment_id=shipment.id
+                   WHERE shipment.origin_warehouse_id=w.id
+                     AND item.product_id=p.id
+                     AND shipment.flow_type='SALIDA_DISTRIBUCION'
+                     AND shipment.status='PREPARANDO'
+                     AND shipment.inventory_reserved_at IS NOT NULL
+                     AND shipment.inventory_dispatched_at IS NULL
+                 ),'[]'::JSON)
+               ) ORDER BY w.name) FILTER (WHERE w.id IS NOT NULL) AS warehouses
        FROM products p
        JOIN categories c ON c.id=p.category_id
        LEFT JOIN stocks s ON s.product_id=p.id AND ($2::BIGINT IS NULL OR s.warehouse_id=$2)
@@ -573,19 +590,20 @@ router.post(
       );
       if (!supplier.rowCount) throw new AppError(400, "El proveedor no existe o está inactivo");
       const products = await client.query(
-        `SELECT id,unit_price,category_id FROM products
-         WHERE id=ANY($1::BIGINT[]) AND active`,
-        [input.items.map((item) => item.product_id)],
+        `SELECT p.id,catalog.unit_price
+         FROM supplier_products catalog
+         JOIN products p ON p.id=catalog.product_id
+         WHERE catalog.supplier_id=$2
+           AND catalog.product_id=ANY($1::BIGINT[])
+           AND catalog.active
+           AND p.active`,
+        [input.items.map((item) => item.product_id), input.supplier_id],
       );
       if (products.rowCount !== input.items.length) {
-        throw new AppError(400, "Uno o más productos no existen o están inactivos");
-      }
-      if (
-        products.rows.some(
-          (product) => Number(product.category_id) !== Number(supplier.rows[0].category_id),
-        )
-      ) {
-        throw new AppError(400, "Los productos deben pertenecer a la categoría del proveedor");
+        throw new AppError(
+          400,
+          "Uno o más productos no pertenecen al catálogo activo del proveedor seleccionado",
+        );
       }
       const priceByProduct = new Map(
         products.rows.map((product) => [Number(product.id), Number(product.unit_price)]),

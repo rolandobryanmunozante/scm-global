@@ -94,6 +94,33 @@ for (const expected of roles) {
   process.stdout.write(`✓ ${expected.role}\n`);
 }
 
+const suppliers = await request("/proveedores", {
+  token: roleTokens.get("PURCHASE_MANAGER"),
+});
+assert.equal(suppliers.status, 200, `Catálogos de proveedor respondieron ${suppliers.status}`);
+assert.ok(
+  suppliers.body.every((supplier) => supplier.catalog instanceof Array && supplier.catalog.length > 0),
+  "Cada proveedor activo debe tener productos en su catálogo",
+);
+const supplierCatalog = await request(`/proveedores/${suppliers.body[0].id}/catalogo`, {
+  token: roleTokens.get("PURCHASE_MANAGER"),
+});
+assert.equal(supplierCatalog.status, 200, `Catálogo de proveedor respondió ${supplierCatalog.status}`);
+assert.ok(supplierCatalog.body.products.length > 0, "El catálogo seleccionado no puede estar vacío");
+
+const trackingMatches = await request("/transporte/rastreo?q=SCM-BO&limit=5");
+assert.equal(trackingMatches.status, 200, `Buscador de rastreo respondió ${trackingMatches.status}`);
+assert.ok(
+  trackingMatches.body.length > 0 &&
+    trackingMatches.body.every((shipment) => shipment.tracking_code.includes("SCM-BO")),
+  "El buscador de rastreo debe devolver coincidencias del código escrito",
+);
+
+const exportWithoutDates = await request("/reportes/exportar?format=pdf", {
+  token: roleTokens.get("ADMIN"),
+});
+assert.equal(exportWithoutDates.status, 400, "La exportación debe exigir ambas fechas");
+
 for (const trackingCode of [
   "SCM-BO-2026-001",
   "SCM-BR-2026-003",
@@ -106,6 +133,9 @@ for (const trackingCode of [
   assert.ok(tracking.body.items instanceof Array && tracking.body.items.length > 0);
   assert.equal(typeof tracking.body.shipment.position_state, "string");
   assert.equal(typeof tracking.body.shipment.incident_count, "number");
+  if (trackingCode === "SCM-BR-2026-003") {
+    assert.equal(tracking.body.shipment.latest_incident_type, "MECANICA");
+  }
 }
 
 const operationalMap = await request("/logistica/mapa-envios", {
@@ -124,7 +154,7 @@ assert.ok(
 
 const missingTracking = await request("/transporte/rastreo/SCM-NO-EXISTE");
 assert.equal(missingTracking.status, 404);
-process.stdout.write("✓ rastreo público y aislamiento por roles\n");
+process.stdout.write("✓ catálogos, fechas de reportes, rastreo público y aislamiento por roles\n");
 
 async function request(path, options = {}) {
   const response = await fetch(`${baseUrl}${path}`, {

@@ -1,4 +1,4 @@
-import { Bot, Check, ClockAlert, PackageCheck, Plus, RefreshCw, Trash2, Truck } from "lucide-react";
+import { Bot, Check, ClockAlert, PackageCheck, Plus, RefreshCw, Search, ShoppingCart, Trash2, Truck } from "lucide-react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { api, getErrorMessage } from "../api/client";
@@ -12,7 +12,16 @@ interface PurchaseOrder {
   items: Array<{ product_id: number; sku: string; product: string; quantity: number; unit_price: number }>;
 }
 interface Supplier { id: number; commercial_name: string; category_id: number }
-interface Product { id: number; sku: string; name: string; category_id: number }
+interface CatalogProduct {
+  id: number;
+  sku: string;
+  name: string;
+  category_id: number;
+  category: string;
+  unit_of_measure: string;
+  unit_price: number;
+  lead_time_days: number;
+}
 interface Warehouse { id: number; code: string; name: string }
 
 export function PurchaseOrdersPage() {
@@ -23,22 +32,19 @@ export function PurchaseOrdersPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
   const [receiving, setReceiving] = useState<PurchaseOrder | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [ordersResponse, suppliersResponse, productsResponse, warehousesResponse] = await Promise.all([
+      const [ordersResponse, suppliersResponse, warehousesResponse] = await Promise.all([
         api.get<PurchaseOrder[]>("/inventarios/ordenes-compra"),
         can("purchases.write") ? api.get<Supplier[]>("/proveedores?active=true") : Promise.resolve({ data: [] }),
-        can("purchases.write") ? api.get<Product[]>("/inventarios/productos") : Promise.resolve({ data: [] }),
         can("purchases.receive") ? api.get<Warehouse[]>("/inventarios/almacenes") : Promise.resolve({ data: [] }),
       ]);
       setOrders(ordersResponse.data);
       setSuppliers(suppliersResponse.data);
-      setProducts(productsResponse.data);
       setWarehouses(warehousesResponse.data);
     }
     catch (cause) { setError(getErrorMessage(cause)); } finally { setLoading(false); }
@@ -80,50 +86,126 @@ export function PurchaseOrdersPage() {
         </footer>
       </article>)}
     </div>}
-    <CreateOrderModal open={createOpen} suppliers={suppliers} products={products} onClose={() => setCreateOpen(false)} onSaved={async () => { setCreateOpen(false); setMessage("Orden manual creada en estado borrador."); await load(); }}/>
+    <CreateOrderModal open={createOpen} suppliers={suppliers} onClose={() => setCreateOpen(false)} onSaved={async () => { setCreateOpen(false); setMessage("Orden manual creada en estado borrador."); await load(); }}/>
     <ReceiveOrderModal order={receiving} warehouses={warehouses} onClose={() => setReceiving(null)} onSaved={async () => { setReceiving(null); setMessage("Orden recibida; el inventario y su trazabilidad fueron actualizados."); await load(); }}/>
   </>;
 }
 
-function CreateOrderModal({ open, suppliers, products, onClose, onSaved }: { open: boolean; suppliers: Supplier[]; products: Product[]; onClose: () => void; onSaved: () => Promise<void> }) {
+function CreateOrderModal({ open, suppliers, onClose, onSaved }: { open: boolean; suppliers: Supplier[]; onClose: () => void; onSaved: () => Promise<void> }) {
   const [supplierId, setSupplierId] = useState("");
   const [expectedDate, setExpectedDate] = useState("");
   const [notes, setNotes] = useState("");
-  const [items, setItems] = useState([{ product_id: "", quantity: 1 }]);
+  const [items, setItems] = useState<Array<{ product_id: number; quantity: number }>>([]);
+  const [catalog, setCatalog] = useState<CatalogProduct[]>([]);
+  const [catalogSearch, setCatalogSearch] = useState("");
+  const [catalogLoading, setCatalogLoading] = useState(false);
   const [error, setError] = useState("");
   const supplier = suppliers.find((item) => item.id === Number(supplierId));
-  const compatibleProducts = products.filter((product) => !supplier || product.category_id === supplier.category_id);
-  const updateItem = (index: number, patch: Partial<(typeof items)[number]>) =>
-    setItems((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
+  const visibleCatalog = catalog.filter((product) =>
+    `${product.sku} ${product.name} ${product.category}`
+      .toLocaleLowerCase()
+      .includes(catalogSearch.trim().toLocaleLowerCase()),
+  );
+  const orderTotal = items.reduce((total, item) => {
+    const product = catalog.find((entry) => Number(entry.id) === Number(item.product_id));
+    return total + Number(product?.unit_price ?? 0) * Number(item.quantity);
+  }, 0);
+
+  useEffect(() => {
+    if (!open) return;
+    setSupplierId("");
+    setExpectedDate("");
+    setNotes("");
+    setItems([]);
+    setCatalog([]);
+    setCatalogSearch("");
+    setError("");
+  }, [open]);
+
+  const changeSupplier = async (value: string) => {
+    setSupplierId(value);
+    setItems([]);
+    setCatalog([]);
+    setCatalogSearch("");
+    setError("");
+    if (!value) return;
+    setCatalogLoading(true);
+    try {
+      const { data } = await api.get<{ products: CatalogProduct[] }>(
+        `/proveedores/${value}/catalogo`,
+      );
+      setCatalog(data.products);
+    } catch (cause) {
+      setError(getErrorMessage(cause));
+    } finally {
+      setCatalogLoading(false);
+    }
+  };
+  const addProduct = (productId: number) =>
+    setItems((current) =>
+      current.some((item) => item.product_id === productId)
+        ? current
+        : [...current, { product_id: productId, quantity: 1 }],
+    );
+  const updateQuantity = (productId: number, quantity: number) =>
+    setItems((current) =>
+      current.map((item) => (item.product_id === productId ? { ...item, quantity } : item)),
+    );
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setError("");
+    if (!items.length) {
+      setError("Agregue al menos un producto del catálogo del proveedor.");
+      return;
+    }
     try {
       await api.post("/inventarios/ordenes-compra", {
         supplier_id: Number(supplierId),
         expected_delivery_date: expectedDate || undefined,
         notes: notes || null,
-        items: items.map((item) => ({ product_id: Number(item.product_id), quantity: Number(item.quantity) })),
+        items: items.map((item) => ({ product_id: item.product_id, quantity: Number(item.quantity) })),
       });
       await onSaved();
     } catch (cause) { setError(getErrorMessage(cause)); }
   };
-  return <Modal open={open} onClose={onClose} title="Nueva orden de compra" width="760px">
+  return <Modal open={open} onClose={onClose} title="Nueva orden de compra" width="920px">
     {error && <Alert>{error}</Alert>}
     <form onSubmit={submit}>
       <div className="form-grid">
-        <label className="field"><span>Proveedor *</span><select value={supplierId} onChange={(event) => { setSupplierId(event.target.value); setItems([{ product_id: "", quantity: 1 }]); }} required><option value="">Seleccione…</option>{suppliers.map((item) => <option key={item.id} value={item.id}>{item.commercial_name}</option>)}</select></label>
+        <label className="field"><span>Proveedor *</span><select value={supplierId} onChange={(event) => void changeSupplier(event.target.value)} required><option value="">Seleccione…</option>{suppliers.map((item) => <option key={item.id} value={item.id}>{item.commercial_name}</option>)}</select><small className="hint">El catálogo se carga al seleccionar el proveedor.</small></label>
         <label className="field"><span>Entrega esperada</span><input type="date" min={new Date().toISOString().slice(0,10)} value={expectedDate} onChange={(event) => setExpectedDate(event.target.value)}/></label>
         <label className="field full"><span>Notas</span><textarea value={notes} onChange={(event) => setNotes(event.target.value)}/></label>
       </div>
-      <div className="order-items">
-        {items.map((item, index) => <div key={index}>
-          <select value={item.product_id} onChange={(event) => updateItem(index, { product_id: event.target.value })} required><option value="">Producto…</option>{compatibleProducts.filter((product) => !items.some((selected, selectedIndex) => selectedIndex !== index && Number(selected.product_id) === product.id)).map((product) => <option key={product.id} value={product.id}>{product.sku} · {product.name}</option>)}</select>
-          <input aria-label="Cantidad" type="number" min="1" value={item.quantity} onChange={(event) => updateItem(index, { quantity: Number(event.target.value) })}/>
-          {items.length > 1 && <button type="button" className="button danger" onClick={() => setItems((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Trash2 size={13}/></button>}
-        </div>)}
-      </div>
-      <button type="button" className="button" onClick={() => setItems((current) => [...current, { product_id: "", quantity: 1 }])} disabled={!supplierId || items.length >= compatibleProducts.length}><Plus size={13}/> Agregar producto</button>
-      <div className="form-actions"><button type="button" className="button" onClick={onClose}>Cancelar</button><button className="button primary">Crear orden</button></div>
+      {supplierId && <div className="purchase-catalog-layout">
+        <section className="purchase-catalog">
+          <header>
+            <div><strong>Catálogo · {supplier?.commercial_name}</strong><small>{catalog.length} productos habilitados para este proveedor</small></div>
+            <div className="search-input"><Search size={14}/><input value={catalogSearch} onChange={(event) => setCatalogSearch(event.target.value)} placeholder="Buscar producto o SKU"/></div>
+          </header>
+          {catalogLoading ? <LoadingState label="Cargando catálogo…"/> : visibleCatalog.length ? <div className="purchase-catalog-grid">
+            {visibleCatalog.map((product) => {
+              const selected = items.some((item) => item.product_id === Number(product.id));
+              return <button key={product.id} type="button" className={selected ? "selected" : ""} onClick={() => addProduct(Number(product.id))} disabled={selected}>
+                <span><strong>{product.name}</strong><small>{product.sku} · {product.unit_of_measure} · entrega {product.lead_time_days} días</small></span>
+                <b>{selected ? "Agregado" : formatMoney(product.unit_price)}</b>
+              </button>;
+            })}
+          </div> : <EmptyState title="Sin productos en el catálogo" description="Edite el proveedor y asigne productos de su rubro."/>}
+        </section>
+        <aside className="purchase-cart">
+          <header><ShoppingCart size={17}/><div><strong>Productos de la orden</strong><small>{items.length} seleccionados</small></div></header>
+          {items.length ? <div className="purchase-cart-items">{items.map((item) => {
+            const product = catalog.find((entry) => Number(entry.id) === item.product_id);
+            if (!product) return null;
+            return <article key={item.product_id}>
+              <div><strong>{product.name}</strong><small>{product.sku} · {formatMoney(product.unit_price)} c/u</small></div>
+              <input aria-label={`Cantidad de ${product.name}`} type="number" min="1" value={item.quantity} onChange={(event) => updateQuantity(item.product_id, Math.max(1, Number(event.target.value)))}/>
+              <button type="button" className="icon-button" title="Quitar producto" onClick={() => setItems((current) => current.filter((entry) => entry.product_id !== item.product_id))}><Trash2 size={13}/></button>
+            </article>;
+          })}</div> : <p>Seleccione productos desde el catálogo de la izquierda.</p>}
+          <footer><span>Total estimado</span><strong>{formatMoney(orderTotal)}</strong></footer>
+        </aside>
+      </div>}
+      <div className="form-actions"><button type="button" className="button" onClick={onClose}>Cancelar</button><button className="button primary" disabled={!supplierId || !items.length}><Plus size={13}/> Crear orden</button></div>
     </form>
   </Modal>;
 }

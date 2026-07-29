@@ -170,6 +170,7 @@ Las migraciones se ejecutan automáticamente en una base nueva:
 - `database/migrations/006_transport_observability.sql`: telemetría de vehículos y eventos de retraso/resolución.
 - `database/migrations/007_operational_demo_data.sql`: flujos correlacionados en varias etapas para todos los roles.
 - `database/migrations/008_shipment_delay_minutes.sql`: duración persistente de retrasos y alertas operativas.
+- `database/migrations/009_supplier_catalogs_and_reservation_consistency.sql`: catálogos por proveedor, reservas vinculadas a envíos e incidencias de transporte clasificadas.
 
 `database/migrate.sh` registra cada archivo aplicado en `schema_migrations`. La información persiste en el volumen `scm_postgres_data`, normalmente prefijado con el nombre del proyecto Compose.
 

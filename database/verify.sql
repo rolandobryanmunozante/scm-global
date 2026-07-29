@@ -51,6 +51,19 @@ BEGIN
   END IF;
 
   SELECT COUNT(*) INTO violations
+  FROM purchase_orders purchase_order
+  JOIN purchase_order_items item ON item.purchase_order_id=purchase_order.id
+  WHERE NOT EXISTS (
+    SELECT 1
+    FROM supplier_products catalog
+    WHERE catalog.supplier_id=purchase_order.supplier_id
+      AND catalog.product_id=item.product_id
+  );
+  IF violations > 0 THEN
+    RAISE EXCEPTION 'Hay % productos de órdenes fuera del catálogo histórico del proveedor', violations;
+  END IF;
+
+  SELECT COUNT(*) INTO violations
   FROM shipments s
   WHERE NOT EXISTS (SELECT 1 FROM shipment_items i WHERE i.shipment_id=s.id);
   IF violations > 0 THEN
@@ -70,6 +83,28 @@ BEGIN
   WHERE current_quantity<0 OR reserved_quantity<0 OR reserved_quantity>current_quantity;
   IF violations > 0 THEN
     RAISE EXCEPTION 'Hay % registros de stock inconsistentes', violations;
+  END IF;
+
+  SELECT COUNT(*) INTO violations
+  FROM stocks stock
+  LEFT JOIN (
+    SELECT
+      shipment.origin_warehouse_id AS warehouse_id,
+      item.product_id,
+      SUM(item.quantity)::INTEGER AS reserved_quantity
+    FROM shipments shipment
+    JOIN shipment_items item ON item.shipment_id=shipment.id
+    WHERE shipment.flow_type='SALIDA_DISTRIBUCION'
+      AND shipment.status='PREPARANDO'
+      AND shipment.inventory_reserved_at IS NOT NULL
+      AND shipment.inventory_dispatched_at IS NULL
+    GROUP BY shipment.origin_warehouse_id,item.product_id
+  ) expected
+    ON expected.warehouse_id=stock.warehouse_id
+   AND expected.product_id=stock.product_id
+  WHERE stock.reserved_quantity<>COALESCE(expected.reserved_quantity,0);
+  IF violations > 0 THEN
+    RAISE EXCEPTION 'Hay % reservas de stock sin un envío preparado que las justifique', violations;
   END IF;
 
   SELECT COUNT(*) INTO violations
@@ -168,6 +203,7 @@ SELECT
   (SELECT COUNT(*) FROM users WHERE active) AS active_users,
   (SELECT COUNT(*) FROM suppliers WHERE active) AS active_suppliers,
   (SELECT COUNT(*) FROM products WHERE active) AS active_products,
+  (SELECT COUNT(*) FROM supplier_products WHERE active) AS active_catalog_items,
   (SELECT COUNT(*) FROM warehouses WHERE active) AS active_warehouses,
   (SELECT COUNT(*) FROM purchase_orders) AS purchase_orders,
   (SELECT COUNT(*) FROM shipments) AS shipments,

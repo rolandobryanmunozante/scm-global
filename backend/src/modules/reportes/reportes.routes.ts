@@ -23,6 +23,11 @@ const filtersSchema = z
     path: ["from"],
   });
 
+const exportFiltersSchema = filtersSchema.refine((value) => value.from && value.to, {
+  message: "Debe seleccionar una fecha inicial y una fecha final para exportar",
+  path: ["from"],
+});
+
 router.get(
   "/filtros",
   requirePermission("reports.read"),
@@ -219,7 +224,7 @@ router.get(
   requirePermission("reports.export"),
   asyncHandler(async (request, response) => {
     const format = z.enum(["pdf", "xlsx"]).parse(request.query.format);
-    const filters = filtersSchema.parse(request.query);
+    const filters = exportFiltersSchema.parse(request.query);
     const report = await loadReportData(filters);
     if (format === "xlsx") {
       const buffer = await buildReportWorkbook(report, filters);

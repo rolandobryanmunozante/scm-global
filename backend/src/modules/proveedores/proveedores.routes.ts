@@ -1,4 +1,5 @@
 import { Router } from "express";
+import type { PoolClient } from "pg";
 import { z } from "zod";
 import { asyncHandler } from "../../shared/async-handler.js";
 import { authenticate, requirePermission } from "../../shared/auth.js";
@@ -18,6 +19,7 @@ const supplierSchema = z.object({
   phone: z.string().trim().min(5).max(30),
   address: z.string().trim().max(500).nullable().optional(),
   notes: z.string().trim().max(1000).nullable().optional(),
+  product_ids: z.array(z.coerce.number().int().positive()).min(1).max(100).optional(),
 });
 
 router.get(
@@ -25,6 +27,22 @@ router.get(
   requirePermission("suppliers.read", "inventory.read"),
   asyncHandler(async (_request, response) => {
     const result = await pool.query("SELECT id, name FROM categories WHERE active ORDER BY name");
+    response.json(result.rows);
+  }),
+);
+
+router.get(
+  "/catalogo-productos",
+  requirePermission("suppliers.read", "purchases.read"),
+  asyncHandler(async (_request, response) => {
+    const result = await pool.query(
+      `SELECT p.id,p.sku,p.name,p.category_id,c.name AS category,
+              p.unit_of_measure,p.unit_price
+       FROM products p
+       JOIN categories c ON c.id=p.category_id
+       WHERE p.active
+       ORDER BY c.name,p.name`,
+    );
     response.json(result.rows);
   }),
 );
@@ -43,7 +61,16 @@ router.get(
       })
       .parse(request.query);
     const result = await pool.query(
-      `SELECT s.*, c.name AS category, ss.score::FLOAT AS score, ss.rating_count
+      `SELECT s.*, c.name AS category, ss.score::FLOAT AS score, ss.rating_count,
+              COALESCE((
+                SELECT json_agg(json_build_object(
+                  'id',p.id,'sku',p.sku,'name',p.name,'unit_of_measure',p.unit_of_measure,
+                  'unit_price',catalog.unit_price,'lead_time_days',catalog.lead_time_days
+                ) ORDER BY p.name)
+                FROM supplier_products catalog
+                JOIN products p ON p.id=catalog.product_id
+                WHERE catalog.supplier_id=s.id AND catalog.active AND p.active
+              ),'[]'::JSON) AS catalog
        FROM suppliers s
        JOIN categories c ON c.id = s.category_id
        JOIN supplier_scores ss ON ss.supplier_id = s.id
@@ -88,6 +115,12 @@ router.post(
           input.notes ?? null,
         ],
       );
+      await syncSupplierCatalog(
+        client,
+        Number(result.rows[0].id),
+        input.category_id,
+        input.product_ids,
+      );
       await audit(request, { action: "CREATE", entityType: "supplier", entityId: result.rows[0].id }, client);
       await client.query("COMMIT");
       response.status(201).json(result.rows[0]);
@@ -106,26 +139,68 @@ router.put(
   asyncHandler(async (request, response) => {
     const id = z.coerce.number().int().positive().parse(request.params.id);
     const input = supplierSchema.parse(request.body);
-    const result = await pool.query(
-      `UPDATE suppliers SET
-         commercial_name=$2, tax_id=$3, country=$4, category_id=$5, email=$6,
-         phone=$7, address=$8, notes=$9
-       WHERE id=$1 RETURNING *`,
-      [
-        id,
-        input.commercial_name,
-        input.tax_id,
-        input.country,
-        input.category_id,
-        input.email,
-        input.phone,
-        input.address ?? null,
-        input.notes ?? null,
-      ],
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await client.query(
+        `UPDATE suppliers SET
+           commercial_name=$2, tax_id=$3, country=$4, category_id=$5, email=$6,
+           phone=$7, address=$8, notes=$9
+         WHERE id=$1 RETURNING *`,
+        [
+          id,
+          input.commercial_name,
+          input.tax_id,
+          input.country,
+          input.category_id,
+          input.email,
+          input.phone,
+          input.address ?? null,
+          input.notes ?? null,
+        ],
+      );
+      if (!result.rowCount) throw new AppError(404, "Proveedor no encontrado");
+      await syncSupplierCatalog(client, id, input.category_id, input.product_ids);
+      await audit(request, { action: "UPDATE", entityType: "supplier", entityId: id }, client);
+      await client.query("COMMIT");
+      response.json(result.rows[0]);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }),
+);
+
+router.get(
+  "/:id/catalogo",
+  requirePermission("suppliers.read", "purchases.read", "supplier.portal"),
+  asyncHandler(async (request, response) => {
+    const supplierId = z.coerce.number().int().positive().parse(request.params.id);
+    if (
+      request.user!.role === "SUPPLIER" &&
+      Number(request.user!.supplierId) !== supplierId
+    ) {
+      throw new AppError(403, "El proveedor solo puede consultar su propio catálogo");
+    }
+    const supplier = await pool.query(
+      `SELECT id,code,commercial_name,category_id
+       FROM suppliers WHERE id=$1 AND active`,
+      [supplierId],
     );
-    if (!result.rowCount) throw new AppError(404, "Proveedor no encontrado");
-    await audit(request, { action: "UPDATE", entityType: "supplier", entityId: id });
-    response.json(result.rows[0]);
+    if (!supplier.rowCount) throw new AppError(404, "Proveedor activo no encontrado");
+    const products = await pool.query(
+      `SELECT p.id,p.sku,p.name,p.category_id,c.name AS category,p.unit_of_measure,
+              catalog.unit_price,catalog.lead_time_days
+       FROM supplier_products catalog
+       JOIN products p ON p.id=catalog.product_id
+       JOIN categories c ON c.id=p.category_id
+       WHERE catalog.supplier_id=$1 AND catalog.active AND p.active
+       ORDER BY p.name`,
+      [supplierId],
+    );
+    response.json({ supplier: supplier.rows[0], products: products.rows });
   }),
 );
 
@@ -264,3 +339,52 @@ router.patch(
 );
 
 export default router;
+
+async function syncSupplierCatalog(
+  client: PoolClient,
+  supplierId: number,
+  categoryId: number,
+  requestedProductIds?: number[],
+): Promise<void> {
+  const productIds =
+    requestedProductIds ??
+    (
+      await client.query(
+        "SELECT id FROM products WHERE category_id=$1 AND active ORDER BY id",
+        [categoryId],
+      )
+    ).rows.map((product) => Number(product.id));
+  const uniqueProductIds = [...new Set(productIds.map(Number))];
+  if (!uniqueProductIds.length) {
+    throw new AppError(400, "El proveedor debe tener al menos un producto en su catálogo");
+  }
+  const products = await client.query(
+    `SELECT id,category_id,unit_price
+     FROM products
+     WHERE id=ANY($1::BIGINT[]) AND active
+     ORDER BY id`,
+    [uniqueProductIds],
+  );
+  if (
+    products.rowCount !== uniqueProductIds.length ||
+    products.rows.some((product) => Number(product.category_id) !== Number(categoryId))
+  ) {
+    throw new AppError(
+      400,
+      "El catálogo solo puede incluir productos activos del rubro del proveedor",
+    );
+  }
+  await client.query(
+    "UPDATE supplier_products SET active=FALSE,updated_at=NOW() WHERE supplier_id=$1",
+    [supplierId],
+  );
+  for (const product of products.rows) {
+    await client.query(
+      `INSERT INTO supplier_products(supplier_id,product_id,unit_price,active)
+       VALUES($1,$2,$3,TRUE)
+       ON CONFLICT(supplier_id,product_id)
+       DO UPDATE SET active=TRUE,updated_at=NOW()`,
+      [supplierId, product.id, product.unit_price],
+    );
+  }
+}

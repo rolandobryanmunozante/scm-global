@@ -104,19 +104,20 @@ export async function generateAutomaticPurchaseOrders(): Promise<number> {
       if (existing.rowCount) continue;
 
       const supplier = await client.query(
-        `SELECT s.id
-         FROM suppliers s
+        `SELECT s.id,catalog.unit_price
+         FROM supplier_products catalog
+         JOIN suppliers s ON s.id=catalog.supplier_id
          JOIN supplier_scores ss ON ss.supplier_id = s.id
-         WHERE s.category_id = $1 AND s.active
+         WHERE catalog.product_id=$1 AND catalog.active AND s.active
          ORDER BY ss.score DESC, s.created_at ASC
          LIMIT 1`,
-        [product.category_id],
+        [product.id],
       );
       if (!supplier.rowCount) {
         await client.query(
           `INSERT INTO audit_logs (action, entity_type, entity_id, details)
            VALUES ('AUTO_REPLENISH_SKIPPED', 'product', $1, $2)`,
-          [product.id, JSON.stringify({ reason: "No existe proveedor activo para la categoría" })],
+          [product.id, JSON.stringify({ reason: "No existe proveedor activo con el producto en catálogo" })],
         );
         continue;
       }
@@ -132,7 +133,7 @@ export async function generateAutomaticPurchaseOrders(): Promise<number> {
       await client.query(
         `INSERT INTO purchase_order_items (purchase_order_id, product_id, quantity, unit_price)
          VALUES ($1,$2,$3,$4)`,
-        [order.rows[0].id, product.id, suggestedQuantity, product.unit_price],
+        [order.rows[0].id, product.id, suggestedQuantity, supplier.rows[0].unit_price],
       );
       await notifyRole(
         client,
