@@ -28,7 +28,7 @@ const roleGuides: RoleGuide[] = [
   { code: "PURCHASE_MANAGER", name: "Responsable de Compras", responsibility: "Gestiona la relación comercial y abastecimiento.", actions: ["Crea y aprueba órdenes", "Gestiona y califica proveedores", "Consulta inventario y reportes"], boundary: "No recibe stock ni conduce o asigna transportes." },
   { code: "INVENTORY_MANAGER", name: "Responsable de Inventario", responsibility: "Mantiene existencias físicas y sus movimientos.", actions: ["Gestiona productos y almacenes", "Recibe compras", "Ejecuta transferencias y movimientos"], boundary: "No aprueba compras ni administra rutas o flota." },
   { code: "LOGISTICS_MANAGER", name: "Responsable de Logística", responsibility: "Planifica el recorrido y ejecuta el transporte.", actions: ["Crea rutas", "Crea envíos de entrada o salida", "Asigna vehículo y conductor"], boundary: "No modifica órdenes ni ajusta stock manualmente." },
-  { code: "DRIVER", name: "Transportista", responsibility: "Ejecuta únicamente los envíos que le fueron asignados.", actions: ["Consulta su carga", "Reporta ubicación, aduana o incidencia", "Confirma la entrega"], boundary: "No ve envíos ajenos ni asigna vehículos." },
+  { code: "DRIVER", name: "Transportista", responsibility: "Ejecuta únicamente los envíos que le fueron asignados.", actions: ["Acepta la carga asignada", "Reporta ubicación, aduana o incidencia", "Registra arribo o entrega final"], boundary: "No ve envíos ajenos, asigna vehículos ni ingresa stock." },
   { code: "MANAGER", name: "Gerencia", responsibility: "Toma decisiones con información consolidada.", actions: ["Consulta indicadores", "Exporta reportes", "Revisa auditoría y trazabilidad"], boundary: "Su perfil es de consulta; no altera la operación." },
   { code: "SUPPLIER", name: "Proveedor", responsibility: "Atiende las órdenes emitidas a su empresa.", actions: ["Ve solo sus órdenes", "Confirma fecha de entrega", "Adjunta documento comercial"], boundary: "No accede a inventario, otros proveedores ni transporte interno." },
   { code: "AUDITOR", name: "Auditor", responsibility: "Verifica trazabilidad, reportes y acciones registradas.", actions: ["Consulta trazabilidad", "Exporta evidencia", "Revisa bitácora de auditoría"], boundary: "No crea ni modifica datos operativos." },
@@ -74,8 +74,9 @@ export function OperationsGuidePage() {
             <ol>
               <li><ClipboardCheck size={17} /><div><strong>Compras</strong><span>Crea y aprueba la orden al proveedor.</span></div></li>
               <li><BadgeCheck size={17} /><div><strong>Proveedor</strong><span>Confirma fecha y documento desde su portal.</span></div></li>
-              <li><Truck size={17} /><div><strong>Logística</strong><span>Elige “Entrada de compra”, ruta y almacén receptor; luego asigna transporte.</span></div></li>
-              <li><PackageCheck size={17} /><div><strong>Transportista</strong><span>Confirma entrega: la orden queda recibida y el stock del destino aumenta.</span></div></li>
+              <li><Truck size={17} /><div><strong>Logística</strong><span>Elige la orden confirmada, la ruta y el almacén; luego asigna transporte.</span></div></li>
+              <li><PackageCheck size={17} /><div><strong>Transportista</strong><span>Acepta la carga, mantiene el rastreo y registra el arribo.</span></div></li>
+              <li><Boxes size={17} /><div><strong>Inventario</strong><span>Revisa físicamente y confirma la recepción; recién aquí aumenta el stock.</span></div></li>
             </ol>
             {can("shipments.assign") && <NavLink to="/envios" className="button primary">Crear entrada <ArrowRight size={14}/></NavLink>}
           </article>
@@ -84,8 +85,9 @@ export function OperationsGuidePage() {
             <ol>
               <li><Boxes size={17} /><div><strong>Logística</strong><span>Elige almacén de salida, producto y cantidad disponible.</span></div></li>
               <li><ShieldCheck size={17} /><div><strong>Sistema</strong><span>Reserva stock al crear el envío y evita sobreasignarlo.</span></div></li>
-              <li><Truck size={17} /><div><strong>Logística</strong><span>Asigna vehículo y conductor; en ese momento se descuenta el origen.</span></div></li>
-              <li><PackageCheck size={17} /><div><strong>Transportista</strong><span>Confirma entrega; si llega a otro almacén, su stock aumenta.</span></div></li>
+              <li><Truck size={17} /><div><strong>Logística</strong><span>Asigna vehículo y conductor sin iniciar todavía el viaje.</span></div></li>
+              <li><PackageCheck size={17} /><div><strong>Transportista</strong><span>Acepta la carga; en ese momento se descuenta el origen. Al llegar registra arribo.</span></div></li>
+              <li><Boxes size={17} /><div><strong>Inventario</strong><span>Si llega a otro almacén, confirma la recepción y aumenta su stock.</span></div></li>
             </ol>
             {can("shipments.assign") && <NavLink to="/envios" className="button primary">Crear salida <ArrowRight size={14}/></NavLink>}
           </article>

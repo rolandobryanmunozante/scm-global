@@ -30,7 +30,7 @@ otra ruta con origen y destino intercambiados.
 | Compras | Proveedores, calificaciones, creación y aprobación de órdenes. | Recibir stock, crear rutas o asignar camiones. |
 | Inventario | Productos, almacenes, recepciones, movimientos y transferencias. | Aprobar compras o administrar transporte. |
 | Logística | Rutas, envíos, flota, capacidad y asignación de conductores. | Modificar órdenes o ajustar stock manualmente. |
-| Transportista | Ver sus envíos y reportar ubicación, aduana, retraso, incidencia, resolución y entrega. | Ver envíos ajenos o asignarse un vehículo. |
+| Transportista | Aceptar sus asignaciones y reportar ubicación, aduana, retraso, incidencia, resolución y arribo. | Ver envíos ajenos, asignarse un vehículo o ingresar stock. |
 | Gerencia | Dashboard, reportes, trazabilidad y auditoría. | Modificar la operación. |
 | Proveedor | Ver únicamente sus órdenes, confirmar fecha y documento. | Ver inventario, otros proveedores o flota interna. |
 | Auditor | Reportes, exportaciones, trazabilidad y bitácora. | Crear o modificar datos operativos. |
@@ -50,14 +50,18 @@ receptor sin descontar ningún almacén de origen.
 6. En **Rutas**, cree o seleccione una ruta de propósito **Llegada de compra** o
    **Uso mixto**. El destino debe corresponder al almacén que recibirá.
 7. En **Transporte**, pulse **Nuevo envío**, elija **Entrada de compra**, la ruta, la
-   orden aprobada y el almacén receptor.
+   orden confirmada y el almacén receptor.
 8. El sistema copia los productos desde `purchase_order_items` a `shipment_items`.
    No existe almacén de salida porque la mercadería proviene del proveedor.
-9. Asigne vehículo y transportista. La orden pasa a `ENVIADA`; todavía no aumenta
-   el stock.
-10. Como transportista, publique el evento **Entrega**. En una sola transacción:
-    la orden pasa a `RECIBIDA`, se crean movimientos `ENTRADA/COMPRA`, aumenta el
-    stock del almacén receptor y el envío queda `ENTREGADO`.
+9. Asigne vehículo y transportista. El envío queda `ASIGNADO`; todavía no sale ni
+   cambia el stock.
+10. Como transportista, pulse **Aceptar carga**. El envío pasa a `EN_TRANSITO` y la
+    orden a `ENVIADA`.
+11. Al llegar, el transportista registra **Arribo al almacén**. El envío queda
+    `PENDIENTE_RECEPCION`; el stock todavía no aumenta.
+12. Como Inventario, revise físicamente la carga y pulse **Confirmar recepción**.
+    En una sola transacción la orden pasa a `RECIBIDA`, se crean movimientos
+    `ENTRADA/COMPRA`, aumenta el stock y el envío queda `ENTREGADO`.
 
 Relaciones esperadas:
 
@@ -77,10 +81,9 @@ delivery
   └─ inventory_movements = ENTRADA / COMPRA
 ```
 
-Inventario también puede recibir directamente una orden sin transporte. Esa opción
-sirve cuando no se necesita seguimiento de ruta; una orden ya recibida no puede
-vincularse ni recibirse por segunda vez. Cuando una orden ya tiene un envío, desaparece
-el botón de recepción manual y la entrega debe registrarse desde **Transporte**.
+No existe recepción directa de una orden. El backend exige confirmación del proveedor,
+envío, asignación, aceptación del conductor y arribo antes de permitir que Inventario
+registre existencias. Así ningún rol puede saltarse el relevo anterior.
 
 ## Ejemplo B: distribución que sale de la empresa
 
@@ -94,12 +97,13 @@ Objetivo: demostrar reserva, despacho y recepción relacionada entre almacenes.
 4. Al crearlo, `current_quantity` no cambia y `reserved_quantity` aumenta. Esto
    impide prometer las mismas unidades a otro envío.
 5. Asigne vehículo y conductor. El backend comprueba capacidad, disponibilidad y
-   licencia. En la misma transacción disminuye `current_quantity`, libera la reserva
-   y registra `SALIDA/DESPACHO`.
-6. Como transportista, publique **Entrega**.
-7. Si se seleccionó otro almacén como destino, su stock aumenta y se registra
-   `ENTRADA/TRASLADO_ENVIO`. Si el destino es cliente final, no se suma a ningún
-   almacén.
+   licencia, pero conserva la reserva y deja el envío `ASIGNADO`.
+6. Como transportista, pulse **Aceptar carga**. En ese momento disminuye
+   `current_quantity`, se libera la reserva y se registra `SALIDA/DESPACHO`.
+7. Si el destino es otro almacén, publique **Arribo**; el envío queda esperando a
+   Inventario sin sumar existencias. Inventario confirma luego
+   `ENTRADA/TRASLADO_ENVIO`. Si el destino es cliente final, el transportista publica
+   **Entrega** y no se suma a ningún almacén.
 
 Relaciones esperadas:
 
@@ -112,9 +116,11 @@ stocks[origin]
        ├─ shipment_items ── products
        └─ shipment_events
 
-creation   → reserved_quantity += cantidad
-assignment → current_quantity -= cantidad; reserved_quantity -= cantidad
-delivery   → stocks[destination] += cantidad (solo si es otro almacén)
+creation         → reserved_quantity += cantidad
+assignment       → shipment.status = ASIGNADO; stock sin cambios
+driver_acceptance→ current_quantity -= cantidad; reserved_quantity -= cantidad
+arrival          → shipment.status = PENDIENTE_RECEPCION; destino sin cambios
+inventory_receive→ stocks[destination] += cantidad; shipment.status = ENTREGADO
 ```
 
 ## Verificación desde la interfaz

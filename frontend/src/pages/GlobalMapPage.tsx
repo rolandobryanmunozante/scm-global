@@ -96,8 +96,10 @@ export function GlobalMapPage() {
       ? "#EF4444"
       : status === "EN_ADUANA"
         ? "#F59E0B"
-        : status === "PREPARANDO"
+        : status === "PREPARANDO" || status === "ASIGNADO"
           ? "#64748B"
+          : status === "PENDIENTE_RECEPCION"
+            ? "#2563EB"
           : "#10B981";
 
   return (

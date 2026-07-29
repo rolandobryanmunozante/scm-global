@@ -25,6 +25,18 @@ const routeSchema = z.object({
   transport_mode: z.enum(["TERRESTRE", "MARITIMO", "AEREO"]),
   purpose: z.enum(["ENTRADA_COMPRA", "SALIDA_DISTRIBUCION", "AMBOS"]).default("AMBOS"),
   is_template: z.boolean().default(true),
+}).superRefine((value, context) => {
+  const points = [value.origin, ...value.stops, value.destination];
+  const uniquePoints = new Set(
+    points.map((point) => `${point.name.toLocaleLowerCase()}|${point.lat}|${point.lng}`),
+  );
+  if (uniquePoints.size !== points.length) {
+    context.addIssue({
+      code: "custom",
+      path: ["stops"],
+      message: "El origen, las escalas y el destino deben ser ubicaciones diferentes",
+    });
+  }
 });
 
 router.get(
@@ -65,6 +77,7 @@ router.post(
       input.destination.country.toLowerCase(),
     ]);
     const warehouseIds = await findRouteWarehouses(input.origin, input.destination);
+    validateRoutePurpose(input.purpose, warehouseIds);
     const result = await pool.query(
       `INSERT INTO routes(
         name,origin_name,origin_country,origin_latitude,origin_longitude,
@@ -124,6 +137,7 @@ router.put(
       input.destination.country.toLowerCase(),
     ]);
     const warehouseIds = await findRouteWarehouses(input.origin, input.destination);
+    validateRoutePurpose(input.purpose, warehouseIds);
     if (input.purpose !== "AMBOS") {
       const incompatible = await pool.query(
         "SELECT COUNT(*)::INTEGER AS total FROM shipments WHERE route_id=$1 AND flow_type::TEXT<>$2",
@@ -320,11 +334,15 @@ router.post(
       if (input.purchase_order_id) {
         const orderResult = await client.query(
           `SELECT * FROM purchase_orders
-           WHERE id=$1 AND status IN ('APROBADA','ENVIADA','CONFIRMADA') FOR UPDATE`,
+           WHERE id=$1 AND status='CONFIRMADA' AND supplier_confirmed_at IS NOT NULL
+           FOR UPDATE`,
           [input.purchase_order_id],
         );
         if (!orderResult.rowCount) {
-          throw new AppError(409, "La orden no existe o no está aprobada para envío");
+          throw new AppError(
+            409,
+            "El proveedor debe confirmar la orden antes de que Logística pueda crear el envío",
+          );
         }
         const existing = await client.query(
           "SELECT 1 FROM shipments WHERE purchase_order_id=$1",
@@ -463,27 +481,21 @@ async function findRouteWarehouses(
   const result = await pool.query(
     `SELECT
        (SELECT id FROM warehouses
-        WHERE active AND LOWER(country)=LOWER($1)
-        ORDER BY
-          CASE WHEN latitude IS NOT NULL AND longitude IS NOT NULL
-            THEN ABS(latitude-$2)+ABS(longitude-$3) ELSE 999 END,
-          CASE WHEN LOWER(name)=LOWER($4) OR LOWER(city)=LOWER($4) THEN 0 ELSE 1 END
+        WHERE active
+          AND LOWER(country)=LOWER($1)
+          AND (LOWER(name)=LOWER($2) OR LOWER(city)=LOWER($2))
+        ORDER BY CASE WHEN LOWER(name)=LOWER($2) THEN 0 ELSE 1 END
         LIMIT 1) AS origin,
        (SELECT id FROM warehouses
-        WHERE active AND LOWER(country)=LOWER($5)
-        ORDER BY
-          CASE WHEN latitude IS NOT NULL AND longitude IS NOT NULL
-            THEN ABS(latitude-$6)+ABS(longitude-$7) ELSE 999 END,
-          CASE WHEN LOWER(name)=LOWER($8) OR LOWER(city)=LOWER($8) THEN 0 ELSE 1 END
+        WHERE active
+          AND LOWER(country)=LOWER($3)
+          AND (LOWER(name)=LOWER($4) OR LOWER(city)=LOWER($4))
+        ORDER BY CASE WHEN LOWER(name)=LOWER($4) THEN 0 ELSE 1 END
         LIMIT 1) AS destination`,
     [
       origin.country,
-      origin.lat,
-      origin.lng,
       origin.name,
       destination.country,
-      destination.lat,
-      destination.lng,
       destination.name,
     ],
   );
@@ -491,4 +503,28 @@ async function findRouteWarehouses(
     origin: result.rows[0]?.origin ? Number(result.rows[0].origin) : null,
     destination: result.rows[0]?.destination ? Number(result.rows[0].destination) : null,
   };
+}
+
+function validateRoutePurpose(
+  purpose: z.infer<typeof routeSchema>["purpose"],
+  warehouses: { origin: number | null; destination: number | null },
+): void {
+  if (purpose === "ENTRADA_COMPRA" && !warehouses.destination) {
+    throw new AppError(
+      400,
+      "Una ruta de compra debe terminar en un almacén activo. Seleccione un almacén como destino.",
+    );
+  }
+  if (purpose === "SALIDA_DISTRIBUCION" && !warehouses.origin) {
+    throw new AppError(
+      400,
+      "Una ruta de distribución debe comenzar en un almacén activo. Seleccione un almacén como origen.",
+    );
+  }
+  if (purpose === "AMBOS" && (!warehouses.origin || !warehouses.destination)) {
+    throw new AppError(
+      400,
+      "Una ruta de uso mixto debe comenzar y terminar en almacenes activos.",
+    );
+  }
 }

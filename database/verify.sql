@@ -15,6 +15,21 @@ BEGIN
   END IF;
 
   SELECT COUNT(*) INTO violations
+  FROM suppliers supplier
+  WHERE supplier.active
+    AND NOT EXISTS (
+      SELECT 1
+      FROM users user_account
+      JOIN roles role_record ON role_record.id=user_account.role_id
+      WHERE user_account.supplier_id=supplier.id
+        AND user_account.active
+        AND role_record.code='SUPPLIER'
+    );
+  IF violations > 0 THEN
+    RAISE EXCEPTION 'Hay % proveedores activos sin usuario de portal', violations;
+  END IF;
+
+  SELECT COUNT(*) INTO violations
   FROM users u JOIN roles r ON r.id=u.role_id
   WHERE r.code='DRIVER' AND u.active
     AND (u.license_number IS NULL OR u.license_expiry IS NULL OR u.license_expiry<CURRENT_DATE);
@@ -79,6 +94,20 @@ BEGIN
   END IF;
 
   SELECT COUNT(*) INTO violations
+  FROM purchase_orders purchase_order
+  WHERE purchase_order.status='RECIBIDA'
+    AND NOT EXISTS (
+      SELECT 1
+      FROM shipments shipment
+      WHERE shipment.purchase_order_id=purchase_order.id
+        AND shipment.flow_type='ENTRADA_COMPRA'
+        AND shipment.status='ENTREGADO'
+    );
+  IF violations > 0 THEN
+    RAISE EXCEPTION 'Hay % órdenes recibidas que omitieron el flujo logístico', violations;
+  END IF;
+
+  SELECT COUNT(*) INTO violations
   FROM stocks
   WHERE current_quantity<0 OR reserved_quantity<0 OR reserved_quantity>current_quantity;
   IF violations > 0 THEN
@@ -95,7 +124,7 @@ BEGIN
     FROM shipments shipment
     JOIN shipment_items item ON item.shipment_id=shipment.id
     WHERE shipment.flow_type='SALIDA_DISTRIBUCION'
-      AND shipment.status='PREPARANDO'
+      AND shipment.status IN ('PREPARANDO','ASIGNADO')
       AND shipment.inventory_reserved_at IS NOT NULL
       AND shipment.inventory_dispatched_at IS NULL
     GROUP BY shipment.origin_warehouse_id,item.product_id
@@ -109,7 +138,7 @@ BEGIN
 
   SELECT COUNT(*) INTO violations
   FROM shipments s
-  WHERE s.status IN ('EN_TRANSITO','EN_ADUANA','INCIDENCIA','RETRASADO')
+  WHERE s.status IN ('ASIGNADO','EN_TRANSITO','EN_ADUANA','INCIDENCIA','RETRASADO','PENDIENTE_RECEPCION')
     AND (s.vehicle_id IS NULL OR s.driver_id IS NULL);
   IF violations > 0 THEN
     RAISE EXCEPTION 'Hay % envíos activos sin transporte o conductor', violations;
@@ -119,7 +148,7 @@ BEGIN
   FROM (
     SELECT vehicle_id
     FROM shipments
-    WHERE status IN ('EN_TRANSITO','EN_ADUANA','INCIDENCIA','RETRASADO')
+    WHERE status IN ('ASIGNADO','EN_TRANSITO','EN_ADUANA','INCIDENCIA','RETRASADO','PENDIENTE_RECEPCION')
     GROUP BY vehicle_id HAVING COUNT(*)>1
   ) conflicts;
   IF violations > 0 THEN
@@ -130,7 +159,7 @@ BEGIN
   FROM (
     SELECT driver_id
     FROM shipments
-    WHERE status IN ('EN_TRANSITO','EN_ADUANA','INCIDENCIA','RETRASADO')
+    WHERE status IN ('ASIGNADO','EN_TRANSITO','EN_ADUANA','INCIDENCIA','RETRASADO','PENDIENTE_RECEPCION')
     GROUP BY driver_id HAVING COUNT(*)>1
   ) conflicts;
   IF violations > 0 THEN
@@ -186,16 +215,63 @@ BEGIN
   END IF;
 
   SELECT COUNT(*) INTO violations
+  FROM routes route
+  WHERE (route.purpose='ENTRADA_COMPRA' AND route.destination_warehouse_id IS NULL)
+     OR (route.purpose='SALIDA_DISTRIBUCION' AND route.origin_warehouse_id IS NULL)
+     OR (
+       route.purpose='AMBOS'
+       AND (route.origin_warehouse_id IS NULL OR route.destination_warehouse_id IS NULL)
+     );
+  IF violations > 0 THEN
+    RAISE EXCEPTION 'Hay % rutas cuyo propósito no coincide con sus almacenes extremos', violations;
+  END IF;
+
+  SELECT COUNT(*) INTO violations
+  FROM routes route
+  CROSS JOIN LATERAL jsonb_array_elements(route.stops) stop
+  WHERE NULLIF(BTRIM(stop->>'country'),'') IS NULL;
+  IF violations > 0 THEN
+    RAISE EXCEPTION 'Hay % paradas de ruta sin país', violations;
+  END IF;
+
+  SELECT COUNT(*) INTO violations
   FROM shipments s
   JOIN purchase_orders po ON po.id=s.purchase_order_id
   WHERE s.flow_type='ENTRADA_COMPRA'
     AND (
-      (s.status='ENTREGADO' AND (po.status<>'RECIBIDA' OR s.inventory_received_at IS NULL))
+      po.supplier_confirmed_at IS NULL
       OR
-      (s.status<>'ENTREGADO' AND po.status='RECIBIDA')
+      (s.status IN ('PREPARANDO','ASIGNADO') AND po.status<>'CONFIRMADA')
+      OR
+      (
+        s.status IN ('EN_TRANSITO','EN_ADUANA','INCIDENCIA','RETRASADO','PENDIENTE_RECEPCION')
+        AND po.status<>'ENVIADA'
+      )
+      OR
+      (s.status='ENTREGADO' AND (po.status<>'RECIBIDA' OR s.inventory_received_at IS NULL))
     );
   IF violations > 0 THEN
     RAISE EXCEPTION 'Hay % compras entrantes con estados de orden y envío contradictorios', violations;
+  END IF;
+
+  SELECT COUNT(*) INTO violations
+  FROM shipments
+  WHERE status='ASIGNADO'
+    AND (vehicle_id IS NULL OR driver_id IS NULL OR departure_at IS NOT NULL);
+  IF violations > 0 THEN
+    RAISE EXCEPTION 'Hay % envíos asignados que ya salieron o no tienen recursos', violations;
+  END IF;
+
+  SELECT COUNT(*) INTO violations
+  FROM shipments
+  WHERE status='PENDIENTE_RECEPCION'
+    AND (
+      destination_warehouse_id IS NULL
+      OR delivered_at IS NOT NULL
+      OR inventory_received_at IS NOT NULL
+    );
+  IF violations > 0 THEN
+    RAISE EXCEPTION 'Hay % arribos que omitieron la confirmación de Inventario', violations;
   END IF;
 END $$;
 

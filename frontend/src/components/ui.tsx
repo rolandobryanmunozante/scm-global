@@ -86,7 +86,7 @@ export function StatusBadge({ status }: { status: string | boolean }) {
   const raw = typeof status === "boolean" ? (status ? "ACTIVO" : "INACTIVO") : status;
   const normalized = raw.toUpperCase().replaceAll(" ", "_");
   const positive = ["ACTIVO", "ENTREGADO", "RECIBIDA", "APROBADA", "CONFIRMADA"].includes(normalized);
-  const warning = ["BORRADOR", "PREPARANDO", "EN_ADUANA", "EN_TRANSITO", "EN_TRÁNSITO"].includes(
+  const warning = ["BORRADOR", "PREPARANDO", "ASIGNADO", "EN_ADUANA", "EN_TRANSITO", "EN_TRÁNSITO", "PENDIENTE_RECEPCION"].includes(
     normalized,
   );
   const danger = ["RETRASADO", "INCIDENCIA", "CANCELADA", "INACTIVO"].includes(normalized);

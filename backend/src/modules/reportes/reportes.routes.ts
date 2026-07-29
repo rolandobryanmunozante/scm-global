@@ -89,7 +89,7 @@ router.get(
           [filters.categoryId ?? null],
         ),
         pool.query(
-          `SELECT COUNT(*) FILTER (WHERE status IN ('EN_TRANSITO','EN_ADUANA','INCIDENCIA','RETRASADO'))::INTEGER AS active,
+          `SELECT COUNT(*) FILTER (WHERE status IN ('ASIGNADO','EN_TRANSITO','EN_ADUANA','INCIDENCIA','RETRASADO','PENDIENTE_RECEPCION'))::INTEGER AS active,
                   COUNT(*) FILTER (WHERE status='RETRASADO' OR (eta_at<NOW() AND status<>'ENTREGADO'))::INTEGER AS delayed
            FROM shipments
            WHERE ($1::DATE IS NULL OR created_at::DATE >= $1)

@@ -24,12 +24,26 @@ export function SupplierPortalPage() {
     {error && <Alert>{error}</Alert>}
     {loading ? <LoadingState /> : orders.length === 0 ? <EmptyState title="No hay órdenes asignadas" /> : <div className="portal-orders">{orders.map((order) => <article className="card portal-order" key={order.id}>
       <div className="portal-order-icon"><PackageCheck size={22}/></div><div className="portal-order-main"><div><strong>{order.code}</strong><StatusBadge status={order.status}/></div><span>Asignada {formatDate(order.created_at)} · Entrega comprometida {formatDate(order.expected_delivery_date)}</span>
-      <div className="portal-order-items">{order.items.map((item) => <small key={item.product_id}>{item.name} · {item.quantity} uds. · {formatMoney(item.unit_price)}</small>)}</div></div>
+      <div className="portal-order-items">{order.items.map((item) => <small key={item.product_id}>{item.name} · {item.quantity} uds. · {formatMoney(item.unit_price)}</small>)}</div>
+      <small className="portal-next-action">{supplierNextAction(order.status)}</small></div>
       {order.supplier_document_url && <a href={order.supplier_document_url} target="_blank" rel="noreferrer" className="icon-button"><ExternalLink size={14}/></a>}
-      {["APROBADA","ENVIADA"].includes(order.status) && <button className="button primary" onClick={() => setSelected(order)}><CheckCircle2 size={14}/> Confirmar orden</button>}
+      {order.status === "APROBADA" && <button className="button primary" onClick={() => setSelected(order)}><CheckCircle2 size={14}/> Confirmar orden</button>}
     </article>)}</div>}
     <ConfirmOrder order={selected} open={Boolean(selected)} onClose={() => setSelected(null)} onSaved={async () => { setSelected(null); await load(); }} />
   </>;
+}
+
+function supplierNextAction(status: string): string {
+  if (status === "APROBADA") {
+    return "Acción requerida: confirme la fecha comprometida para habilitar a Logística.";
+  }
+  if (status === "CONFIRMADA") {
+    return "Confirmación registrada. Logística ya puede preparar el transporte.";
+  }
+  if (status === "ENVIADA") {
+    return "Carga en traslado; el transportista mantiene el rastreo.";
+  }
+  return "Orden recibida y conciliada por el almacén.";
 }
 
 function ConfirmOrder({ order, open, onClose, onSaved }: { order: PortalOrder | null; open: boolean; onClose: () => void; onSaved: () => Promise<void> }) {

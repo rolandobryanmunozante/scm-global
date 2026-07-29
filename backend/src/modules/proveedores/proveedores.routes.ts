@@ -328,11 +328,13 @@ router.patch(
       `UPDATE purchase_orders
        SET status='CONFIRMADA', supplier_confirmed_at=NOW(), expected_delivery_date=$3,
            supplier_document_url=$4
-       WHERE id=$1 AND supplier_id=$2 AND status IN ('APROBADA','ENVIADA')
+       WHERE id=$1 AND supplier_id=$2 AND status='APROBADA'
        RETURNING *`,
       [orderId, request.user!.supplierId, input.expected_delivery_date, input.document_url ?? null],
     );
-    if (!result.rowCount) throw new AppError(404, "Orden disponible no encontrada");
+    if (!result.rowCount) {
+      throw new AppError(409, "La orden ya fue confirmada o no está disponible para este proveedor");
+    }
     await audit(request, { action: "SUPPLIER_CONFIRM", entityType: "purchase_order", entityId: orderId });
     response.json(result.rows[0]);
   }),

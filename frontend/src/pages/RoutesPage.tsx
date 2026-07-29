@@ -68,6 +68,11 @@ const externalLocations: Location[] = [
   { name: "São Paulo", country: "Brasil", lat: -23.5505, lng: -46.6333 },
   { name: "Buenos Aires", country: "Argentina", lat: -34.6037, lng: -58.3816 },
   { name: "Puerto de Arica", country: "Chile", lat: -18.4783, lng: -70.3126 },
+  { name: "Cochabamba", country: "Bolivia", lat: -17.3895, lng: -66.1568 },
+  { name: "Campo Grande", country: "Brasil", lat: -20.4697, lng: -54.6201 },
+  { name: "Corumbá", country: "Brasil", lat: -19.009, lng: -57.653 },
+  { name: "Córdoba", country: "Argentina", lat: -31.4201, lng: -64.1888 },
+  { name: "Jujuy", country: "Argentina", lat: -24.1858, lng: -65.2995 },
 ];
 
 const purposeCopy: Record<RoutePurpose, { title: string; description: string }> = {
@@ -175,7 +180,16 @@ export function RoutesPage() {
         lng: Number(route.destination_longitude),
         warehouseId: route.destination_warehouse_id ?? undefined,
       });
-      for (const stop of route.stops ?? []) items.set(stop.name, stop);
+      for (const stop of route.stops ?? []) {
+        const known = items.get(stop.name);
+        if (known?.country) continue;
+        items.set(stop.name, {
+          ...stop,
+          country: stop.country?.trim() || route.origin_country,
+          lat: Number(stop.lat),
+          lng: Number(stop.lng),
+        });
+      }
     }
     return [...items.values()];
   }, [routes, warehouses]);
@@ -218,6 +232,30 @@ export function RoutesPage() {
     setMessage("");
     if (!origin || !destination) {
       setError("Debe existir al menos un origen y un destino con coordenadas.");
+      return;
+    }
+    if (!origin.country || !destination.country || (stop && !stop.country)) {
+      setError("Todas las ubicaciones deben indicar un país.");
+      return;
+    }
+    if (
+      origin.name === destination.name ||
+      stop?.name === origin.name ||
+      stop?.name === destination.name
+    ) {
+      setError("El origen, la escala y el destino deben ser ubicaciones diferentes.");
+      return;
+    }
+    if (form.purpose === "ENTRADA_COMPRA" && !destination.warehouseId) {
+      setError("Una ruta de compra debe terminar en un almacén activo.");
+      return;
+    }
+    if (form.purpose === "SALIDA_DISTRIBUCION" && !origin.warehouseId) {
+      setError("Una ruta de distribución debe comenzar en un almacén activo.");
+      return;
+    }
+    if (form.purpose === "AMBOS" && (!origin.warehouseId || !destination.warehouseId)) {
+      setError("Una ruta de uso mixto debe comenzar y terminar en almacenes activos.");
       return;
     }
     try {
@@ -391,7 +429,19 @@ export function RoutesPage() {
               <span>Origen: el vehículo sale de *</span>
               <select
                 value={form.origin}
-                onChange={(event) => setForm({ ...form, origin: event.target.value })}
+                onChange={(event) => {
+                  const nextOrigin = event.target.value;
+                  const nextDestination =
+                    form.destination === nextOrigin
+                      ? locations.find((location) => location.name !== nextOrigin)?.name ?? ""
+                      : form.destination;
+                  setForm({
+                    ...form,
+                    origin: nextOrigin,
+                    destination: nextDestination,
+                    stop: form.stop === nextOrigin ? "" : form.stop,
+                  });
+                }}
               >
                 {locations.map((location) => (
                   <option key={location.name} value={location.name}>
@@ -424,7 +474,13 @@ export function RoutesPage() {
               <span>Destino: el vehículo llega a *</span>
               <select
                 value={form.destination}
-                onChange={(event) => setForm({ ...form, destination: event.target.value })}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    destination: event.target.value,
+                    stop: form.stop === event.target.value ? "" : form.stop,
+                  })
+                }
               >
                 {locations
                   .filter((location) => location.name !== form.origin)

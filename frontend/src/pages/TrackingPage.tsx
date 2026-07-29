@@ -78,7 +78,13 @@ interface TrackingSuggestion {
   eta_at: string | null;
 }
 
-const steps = ["PREPARANDO", "EN_TRANSITO", "EN_ADUANA", "ENTREGADO"];
+const steps = [
+  "PREPARANDO",
+  "ASIGNADO",
+  "EN_TRANSITO",
+  "PENDIENTE_RECEPCION",
+  "ENTREGADO",
+];
 const examples = [
   ["SCM-BR-2026-003", "Incidencia"],
   ["SCM-AR-2026-004", "Retrasado"],
@@ -178,7 +184,7 @@ export function TrackingPage() {
     ? Math.max(
         0,
         steps.indexOf(
-          data.shipment.status === "INCIDENCIA" || data.shipment.status === "RETRASADO"
+          ["INCIDENCIA", "RETRASADO", "EN_ADUANA"].includes(data.shipment.status)
             ? "EN_TRANSITO"
             : data.shipment.status,
         ),
@@ -338,7 +344,7 @@ export function TrackingPage() {
                       <CircleDot size={18} />
                     )}
                   </span>
-                  <strong>{step.replaceAll("_", " ")}</strong>
+                  <strong>{step === "PENDIENTE_RECEPCION" ? "RECEPCIÓN" : step.replaceAll("_", " ")}</strong>
                   <small>{eventDate(data.events, step)}</small>
                 </div>
               ))}
