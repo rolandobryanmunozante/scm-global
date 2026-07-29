@@ -17,8 +17,9 @@ powershell -ExecutionPolicy Bypass -File .\iniciar-scm.ps1
 ```
 
 El iniciador descarga `backend:latest` y `frontend:latest`, ejecuta las migraciones
-SQL que todavía no estén registradas en `schema_migrations` y espera hasta que los
-servicios estén saludables. No elimina el volumen ni los registros existentes.
+SQL que todavía no estén registradas en `schema_migrations`, inicia la telemetría
+demostrativa y espera hasta que los servicios estén saludables. No elimina el
+volumen ni los registros existentes.
 
 Verifique el resultado:
 
@@ -51,14 +52,17 @@ En ese modo, Vite y la API se ejecutan desde la terminal; PostgreSQL sigue en Do
 
 ## Demostración de ubicación en tiempo real
 
-Con el sistema levantado, abra una segunda terminal:
+La instalación Docker mantiene automáticamente las ubicaciones demostrativas
+actualizadas cada 15 segundos. Por eso **Mapa global** muestra por separado los
+envíos con ubicación disponible y las señales realmente recibidas en vivo.
+
+Cuando trabaje sin Docker puede iniciar 12 ciclos manuales en una segunda terminal:
 
 ```powershell
 pnpm.cmd demo:telemetry
 ```
 
-El comando publica 12 ciclos de ubicación correlacionados con los transportistas y
-envíos activos. Para mantener la simulación hasta presionar `Ctrl+C`:
+Para mantener la simulación hasta presionar `Ctrl+C`:
 
 ```powershell
 pnpm.cmd demo:telemetry -- --continuous
@@ -68,6 +72,12 @@ Abra simultáneamente **Mapa global**, **Transporte** o el rastreo público
 `SCM-BO-2026-007`; los cambios llegan por WebSocket y no requieren recargar.
 Las ubicaciones son telemetría demostrativa. En producción, el mismo endpoint puede
 recibir posiciones de un GPS o proveedor telemático autenticado.
+
+Para ver el proceso automático de Docker:
+
+```powershell
+docker compose logs -f telemetry-demo
+```
 
 ## Recuperación y cuidado de datos
 

@@ -60,6 +60,22 @@ services:
       timeout: 5s
       retries: 10
 
+  telemetry-demo:
+    image: node:22-alpine
+    init: true
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      SCM_API_URL: http://backend:4000/api
+      SCM_DEMO_PASSWORD: ${SCM_DEMO_PASSWORD:-SCM2026!}
+      SCM_TELEMETRY_INTERVAL_MS: ${SCM_TELEMETRY_INTERVAL_MS:-15000}
+      SCM_TELEMETRY_REQUEST_TIMEOUT_MS: ${SCM_TELEMETRY_REQUEST_TIMEOUT_MS:-5000}
+    volumes:
+      - ./scripts/simulate-telemetry.mjs:/app/simulate-telemetry.mjs:ro
+    command: ["node", "/app/simulate-telemetry.mjs", "--continuous"]
+
   frontend:
     image: ${FRONTEND_IMAGE:-ghcr.io/rolandobryanmunozante/scm-global-frontend:latest}
     build:

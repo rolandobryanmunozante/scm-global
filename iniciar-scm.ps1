@@ -42,5 +42,6 @@ docker compose ps
 Write-Host ""
 Write-Host "SCM Global está disponible en http://localhost:8080"
 Write-Host "API y comprobación de salud: http://localhost:4000/api/health"
+Write-Host "Telemetría demostrativa: activa automáticamente cada 15 segundos"
 Write-Host "Usuario: admin@scm.local"
 Write-Host "Contraseña: SCM2026!"

@@ -34,25 +34,16 @@ export function LoginPage() {
 
   return (
     <div className="login-page">
-      <div className="login-visual">
+      <div className="login-visual" aria-hidden="true">
         <div className="supply-grid" />
-        <div className="login-visual-content">
-          <div className="visual-brand">
-            <div className="brand-mark"><Boxes size={23} /></div>
-            <strong>SCM Global</strong>
-          </div>
-          <div className="visual-copy">
-            <span className="eyebrow">CONTROL TOWER · 2026</span>
-            <h1>Visibilidad total.<br />Decisiones en tiempo real.</h1>
-            <p>Proveedores, inventarios y transporte conectados en un solo centro de operaciones.</p>
-          </div>
-          <div className="network-status">
-            <span className="live-dot" />
-            <div><strong>Red operativa</strong><small>3 almacenes · 4 países conectados</small></div>
-          </div>
-        </div>
+        <span className="login-orb orb-one" />
+        <span className="login-orb orb-two" />
       </div>
 
+      <div className="login-floating-brand">
+        <div className="brand-mark"><Boxes size={23} /></div>
+        <div><strong>SCM Global</strong><span>Control tower</span></div>
+      </div>
       <main className="login-main">
         <div className="login-language">
           <Globe2 size={16} />
@@ -63,7 +54,7 @@ export function LoginPage() {
           </select>
         </div>
         <form className="login-card" onSubmit={submit}>
-          <div className="login-mobile-brand">
+          <div className="login-card-brand">
             <div className="brand-mark"><Boxes size={21} /></div><strong>SCM Global</strong>
           </div>
           <header>
@@ -98,6 +89,10 @@ export function LoginPage() {
             <p><strong>admin@scm.local</strong> · SCM2026!</p>
           </div>
         </form>
+        <div className="network-status">
+          <span className="live-dot" />
+          <div><strong>Red operativa</strong><small>Inventario, compras y transporte conectados</small></div>
+        </div>
         <p className="login-legal">Protegido con JWT · Sesiones de 30 minutos · Control por roles</p>
       </main>
       <ForgotPassword open={forgotOpen} onClose={() => setForgotOpen(false)} />
