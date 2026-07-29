@@ -185,7 +185,8 @@ pnpm dev
 
 `pnpm check` ejecuta verificación TypeScript, pruebas automatizadas y compilaciones de producción de backend y frontend.
 
-Para mover en tiempo real los camiones demostrativos mientras presenta el mapa:
+Docker inicia automáticamente la telemetría demostrativa correlacionada. Si trabaja
+sin Docker, puede mover los camiones mientras presenta el mapa con:
 
 ```powershell
 pnpm.cmd demo:telemetry

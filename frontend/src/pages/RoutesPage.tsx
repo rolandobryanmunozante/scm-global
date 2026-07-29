@@ -3,12 +3,14 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   Edit3,
-  Navigation,
   Plus,
   RotateCcw,
   Route as RouteIcon,
   Save,
+  Ship,
   Trash2,
+  Truck,
+  Plane,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
@@ -82,6 +84,32 @@ const purposeCopy: Record<RoutePurpose, { title: string; description: string }> 
     description: "La ruta puede utilizarse en ambos sentidos operativos según el tipo de envío.",
   },
 };
+
+const transportModes = {
+  TERRESTRE: {
+    label: "Terrestre",
+    description: "Corredor vial · velocidad referencial 45 km/h",
+    color: "#0A4174",
+    dashArray: undefined,
+    icon: Truck,
+  },
+  MARITIMO: {
+    label: "Marítimo",
+    description: "Tramo portuario · velocidad referencial 28 km/h",
+    color: "#4E8EA2",
+    dashArray: "14 9",
+    icon: Ship,
+  },
+  AEREO: {
+    label: "Aéreo",
+    description: "Trayectoria aérea · velocidad referencial 650 km/h",
+    color: "#7BBDE8",
+    dashArray: "4 10",
+    icon: Plane,
+  },
+} as const;
+
+type TransportMode = keyof typeof transportModes;
 
 export function RoutesPage() {
   const [routes, setRoutes] = useState<RouteData[]>([]);
@@ -176,6 +204,9 @@ export function RoutesPage() {
         ({ TERRESTRE: 45, MARITIMO: 28, AEREO: 650 }[form.transport_mode] ?? 45)) *
         10,
     ) / 10;
+  const selectedMode =
+    transportModes[form.transport_mode as TransportMode] ?? transportModes.TERRESTRE;
+  const SelectedModeIcon = selectedMode.icon;
   const customs =
     origin && destination
       ? new Set([origin.country, stop?.country, destination.country].filter(Boolean)).size > 1
@@ -259,13 +290,25 @@ export function RoutesPage() {
       </section>
       <section className="route-planner">
         <div className="map-panel">
-          <MapContainer center={[-17, -67]} zoom={4} scrollWheelZoom>
+          <MapContainer
+            className={`route-map mode-${form.transport_mode.toLowerCase()}`}
+            center={[-17, -67]}
+            zoom={4}
+            scrollWheelZoom
+          >
             <TileLayer
               attribution="&copy; OpenStreetMap contributors"
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
             {points.length > 1 && (
-              <Polyline positions={points} color="#2563EB" weight={4} dashArray="8 7" />
+              <Polyline
+                key={form.transport_mode}
+                positions={points}
+                color={selectedMode.color}
+                weight={form.transport_mode === "AEREO" ? 5 : 4}
+                opacity={0.92}
+                dashArray={selectedMode.dashArray}
+              />
             )}
             {points.map((point, index) => (
               <CircleMarker
@@ -286,8 +329,12 @@ export function RoutesPage() {
               </CircleMarker>
             ))}
           </MapContainer>
-          <div className="map-overlay-card">
-            <Navigation size={15} />
+          <div className={`map-overlay-card mode-${form.transport_mode.toLowerCase()}`}>
+            <SelectedModeIcon size={17} />
+            <div className="map-mode-copy">
+              <span>Modo seleccionado</span>
+              <strong>{selectedMode.label}</strong>
+            </div>
             <div>
               <span>Distancia estimada</span>
               <strong>{straightDistance.toLocaleString()} km</strong>
@@ -389,17 +436,29 @@ export function RoutesPage() {
                   ))}
               </select>
             </label>
-            <label className="field">
-              <span>Modo de transporte *</span>
-              <select
-                value={form.transport_mode}
-                onChange={(event) => setForm({ ...form, transport_mode: event.target.value })}
-              >
-                <option value="TERRESTRE">Terrestre</option>
-                <option value="MARITIMO">Marítimo</option>
-                <option value="AEREO">Aéreo</option>
-              </select>
-            </label>
+            <fieldset className="transport-mode-field">
+              <legend>Modo de transporte *</legend>
+              <div className="transport-mode-picker">
+                {(Object.entries(transportModes) as Array<
+                  [TransportMode, (typeof transportModes)[TransportMode]]
+                >).map(([value, mode]) => {
+                  const ModeIcon = mode.icon;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      className={form.transport_mode === value ? "active" : ""}
+                      aria-pressed={form.transport_mode === value}
+                      onClick={() => setForm({ ...form, transport_mode: value })}
+                    >
+                      <ModeIcon size={18} />
+                      <span>{mode.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <small>{selectedMode.description}. El ETA cambia automáticamente.</small>
+            </fieldset>
             <div className="route-summary">
               <div>
                 <span>Distancia</span>
@@ -441,7 +500,7 @@ export function RoutesPage() {
           <div className="route-cards">
             {routes.map((route) => (
               <article key={route.id}>
-                <div className="route-line">
+                <div className={`route-line mode-${route.transport_mode.toLowerCase()}`}>
                   <span />
                   <i />
                   <span />

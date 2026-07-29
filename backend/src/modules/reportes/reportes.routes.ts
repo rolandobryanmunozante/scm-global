@@ -223,16 +223,18 @@ router.get(
     const report = await loadReportData(filters);
     if (format === "xlsx") {
       const buffer = await buildReportWorkbook(report, filters);
+      const filename = `reporte-scm-${new Date().toISOString().slice(0, 10)}.xlsx`;
       response
         .type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        .setHeader("Content-Disposition", 'attachment; filename="reporte-scm.xlsx"')
+        .setHeader("Content-Disposition", `attachment; filename="${filename}"`)
         .send(buffer);
       return;
     }
-    const buffer = await buildPdf(report, filters);
+    const buffer = await buildPdfReport(report, filters);
+    const filename = `reporte-scm-${new Date().toISOString().slice(0, 10)}.pdf`;
     response
       .type("application/pdf")
-      .setHeader("Content-Disposition", 'attachment; filename="reporte-scm.pdf"')
+      .setHeader("Content-Disposition", `attachment; filename="${filename}"`)
       .send(buffer);
   }),
 );
@@ -266,54 +268,261 @@ async function loadReportData(filters: Filters) {
   return result.rows;
 }
 
-async function buildPdf(rows: Record<string, unknown>[], filters: Filters): Promise<Buffer> {
+export async function buildPdfReport(
+  rows: Record<string, unknown>[],
+  filters: Filters,
+): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const document = new PDFDocument({ size: "A4", margin: 42, bufferPages: true });
+    const document = new PDFDocument({
+      size: "A4",
+      layout: "landscape",
+      margin: 34,
+      bufferPages: true,
+      info: {
+        Title: "Reporte consolidado SCM Global",
+        Author: "SCM Global",
+        Subject: "Órdenes de compra, proveedores y productos",
+      },
+    });
     const chunks: Buffer[] = [];
     document.on("data", (chunk: Buffer) => chunks.push(chunk));
     document.on("end", () => resolve(Buffer.concat(chunks)));
     document.on("error", reject);
 
-    document.rect(0, 0, 595, 72).fill("#2563EB");
-    document.fillColor("#ffffff").fontSize(20).text("SCM Global", 42, 23);
-    document.fontSize(10).text("Reporte consolidado de órdenes de compra", 42, 49);
-    document.moveDown(3);
-    document.fillColor("#0f172a").fontSize(14).text("Resumen");
-    document.fontSize(9).fillColor("#64748B");
-    document.text(`Generado: ${new Date().toLocaleString("es-BO")}`);
-    document.text(`Filtros: ${Object.keys(filters).length ? JSON.stringify(filters) : "Sin filtros"}`);
-    document.text(`Registros: ${rows.length}`);
-    document.moveDown();
+    const totalValue = rows.reduce((sum, row) => sum + Number(row.total ?? 0), 0);
+    const totalUnits = rows.reduce((sum, row) => sum + Number(row.quantity ?? 0), 0);
+    const uniqueOrders = new Set(rows.map((row) => String(row.code ?? ""))).size;
+    const uniqueSuppliers = new Set(rows.map((row) => String(row.supplier ?? ""))).size;
+    const generatedAt = new Date();
+    const contentWidth = document.page.width - 68;
 
-    for (const row of rows) {
-      if (document.y > 740) document.addPage();
+    drawPdfBrandHeader(document, "Reporte consolidado de órdenes de compra");
+    document
+      .fillColor("#49769F")
+      .fontSize(8)
+      .text(
+        `Generado: ${generatedAt.toLocaleString("es-BO")}  ·  ${describePdfFilters(filters)}`,
+        34,
+        91,
+        { width: contentWidth },
+      );
+
+    const cardY = 112;
+    const cardGap = 10;
+    const cardWidth = (contentWidth - cardGap * 3) / 4;
+    const summaryCards = [
+      ["Registros", rows.length.toLocaleString("es-BO")],
+      ["Órdenes únicas", uniqueOrders.toLocaleString("es-BO")],
+      ["Proveedores", uniqueSuppliers.toLocaleString("es-BO")],
+      ["Valor total", money(totalValue)],
+    ];
+    summaryCards.forEach(([label, value], index) => {
+      const x = 34 + index * (cardWidth + cardGap);
+      document.roundedRect(x, cardY, cardWidth, 48, 7).fill("#EAF3F8");
       document
-        .fillColor("#0f172a")
-        .fontSize(9)
-        .text(`${row.code} · ${row.supplier} · ${row.product}`, { continued: false });
+        .fillColor("#49769F")
+        .fontSize(7)
+        .text(label!.toUpperCase(), x + 11, cardY + 9, { width: cardWidth - 22 });
       document
-        .fillColor("#64748B")
+        .fillColor("#001D39")
+        .font("Helvetica-Bold")
+        .fontSize(15)
+        .text(value!, x + 11, cardY + 23, { width: cardWidth - 22 });
+      document.font("Helvetica");
+    });
+
+    const columns: PdfColumn[] = [
+      { label: "Orden", key: "code", width: 72 },
+      { label: "Fecha", key: "created_at", width: 62 },
+      { label: "Estado", key: "status", width: 76 },
+      { label: "Proveedor", key: "supplier", width: 132 },
+      { label: "Producto", key: "product", width: 225 },
+      { label: "País", key: "country", width: 64 },
+      { label: "Cant.", key: "quantity", width: 56, align: "right" },
+      { label: "Total", key: "total", width: 86, align: "right" },
+    ];
+    let tableY = 177;
+    drawPdfTableHeader(document, tableY, columns);
+    tableY += 24;
+
+    rows.forEach((row, rowIndex) => {
+      if (tableY + 29 > document.page.height - 36) {
+        document.addPage();
+        drawPdfBrandHeader(document, "Detalle de órdenes · continuación", true);
+        tableY = 82;
+        drawPdfTableHeader(document, tableY, columns);
+        tableY += 24;
+      }
+      if (rowIndex % 2 === 1) {
+        document.rect(34, tableY, contentWidth, 28).fill("#F4F8FB");
+      }
+      let x = 34;
+      for (const column of columns) {
+        let value = row[column.key];
+        if (column.key === "created_at") value = shortDate(value);
+        if (column.key === "status") value = String(value ?? "").replaceAll("_", " ");
+        if (column.key === "quantity") value = Number(value ?? 0).toLocaleString("es-BO");
+        if (column.key === "total") value = money(Number(value ?? 0));
+        document
+          .fillColor("#001D39")
+          .fontSize(7.4)
+          .text(String(value ?? "—"), x + 6, tableY + 9, {
+            width: column.width - 12,
+            height: 12,
+            ellipsis: true,
+            lineBreak: false,
+            align: column.align ?? "left",
+          });
+        x += column.width;
+      }
+      document
+        .moveTo(34, tableY + 28)
+        .lineTo(34 + contentWidth, tableY + 28)
+        .lineWidth(0.35)
+        .strokeColor("#BDD8E9")
+        .stroke();
+      tableY += 28;
+    });
+
+    if (!rows.length) {
+      document
+        .fillColor("#49769F")
+        .fontSize(10)
+        .text("No existen registros para los filtros seleccionados.", 34, tableY + 24, {
+          width: contentWidth,
+          align: "center",
+        });
+    } else {
+      if (tableY + 34 > document.page.height - 36) {
+        document.addPage();
+        drawPdfBrandHeader(document, "Totales del reporte", true);
+        tableY = 92;
+      }
+      document.roundedRect(34 + contentWidth - 250, tableY + 7, 250, 26, 6).fill("#BDD8E9");
+      document
+        .fillColor("#001D39")
+        .font("Helvetica-Bold")
         .fontSize(8)
         .text(
-          `${row.country} | ${row.status} | Cantidad: ${row.quantity} | Total: Bs ${Number(row.total).toFixed(2)}`,
+          `TOTAL  ·  ${totalUnits.toLocaleString("es-BO")} unidades  ·  ${money(totalValue)}`,
+          34 + contentWidth - 238,
+          tableY + 16,
+          { width: 226, align: "right" },
         );
-      document.moveDown(0.45);
+      document.font("Helvetica");
     }
 
     const pages = document.bufferedPageRange();
     for (let index = 0; index < pages.count; index += 1) {
       document.switchToPage(index);
+      const bottomMargin = document.page.margins.bottom;
+      document.page.margins.bottom = 0;
       document
-        .fontSize(8)
-        .fillColor("#64748B")
-        .text(`SCM Global · Página ${index + 1} de ${pages.count}`, 42, 790, {
-          width: 511,
+        .fontSize(7)
+        .fillColor("#49769F")
+        .text(`SCM Global · Página ${index + 1} de ${pages.count}`, 34, document.page.height - 20, {
+          width: document.page.width - 68,
           align: "center",
           lineBreak: false,
         });
+      document.page.margins.bottom = bottomMargin;
     }
     document.end();
   });
+}
+
+type PdfColumn = {
+  label: string;
+  key: string;
+  width: number;
+  align?: "left" | "right";
+};
+
+function drawPdfBrandHeader(
+  document: PDFKit.PDFDocument,
+  subtitle: string,
+  compact = false,
+) {
+  const height = compact ? 62 : 78;
+  document.rect(0, 0, document.page.width, height).fill("#001D39");
+  document.roundedRect(34, compact ? 15 : 18, 34, 34, 8).fill("#7BBDE8");
+  document
+    .fillColor("#001D39")
+    .font("Helvetica-Bold")
+    .fontSize(10)
+    .text("SCM", 39, compact ? 27 : 30, { width: 24, align: "center" });
+  document
+    .fillColor("#FFFFFF")
+    .font("Helvetica-Bold")
+    .fontSize(compact ? 15 : 19)
+    .text("SCM Global", 80, compact ? 16 : 18);
+  document
+    .fillColor("#BDD8E9")
+    .font("Helvetica")
+    .fontSize(8.5)
+    .text(subtitle, 80, compact ? 36 : 43);
+  if (!compact) {
+    document
+      .fillColor("#7BBDE8")
+      .fontSize(7)
+      .text("CONTROL TOWER · REPORTE EJECUTIVO", document.page.width - 260, 30, {
+        width: 226,
+        align: "right",
+      });
+  }
+}
+
+function drawPdfTableHeader(
+  document: PDFKit.PDFDocument,
+  y: number,
+  columns: PdfColumn[],
+) {
+  const width = columns.reduce((sum, column) => sum + column.width, 0);
+  document.roundedRect(34, y, width, 24, 5).fill("#0A4174");
+  let x = 34;
+  for (const column of columns) {
+    document
+      .fillColor("#FFFFFF")
+      .font("Helvetica-Bold")
+      .fontSize(7)
+      .text(column.label.toUpperCase(), x + 6, y + 9, {
+        width: column.width - 12,
+        lineBreak: false,
+        align: column.align ?? "left",
+      });
+    x += column.width;
+  }
+  document.font("Helvetica");
+}
+
+function describePdfFilters(filters: Filters) {
+  const parts = [
+    filters.from ? `Desde ${filters.from}` : "",
+    filters.to ? `Hasta ${filters.to}` : "",
+    filters.country ? `País: ${filters.country}` : "",
+    filters.supplierId ? `Proveedor ID: ${filters.supplierId}` : "",
+    filters.categoryId ? `Categoría ID: ${filters.categoryId}` : "",
+  ].filter(Boolean);
+  return parts.length ? `Filtros: ${parts.join(" · ")}` : "Sin filtros · alcance completo";
+}
+
+function shortDate(value: unknown) {
+  const date = new Date(String(value ?? ""));
+  return Number.isNaN(date.getTime())
+    ? "—"
+    : new Intl.DateTimeFormat("es-BO", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(date);
+}
+
+function money(value: number) {
+  return new Intl.NumberFormat("es-BO", {
+    style: "currency",
+    currency: "BOB",
+    maximumFractionDigits: 2,
+  }).format(value);
 }
 
 export default router;

@@ -22,7 +22,7 @@ interface DashboardData {
   refreshedAt: string;
 }
 
-const colors = ["#2563EB", "#10B981", "#F59E0B", "#8B5CF6", "#06B6D4"];
+const colors = ["#0A4174", "#4E8EA2", "#6EA2B3", "#7BBDE8", "#BDD8E9"];
 
 export function DashboardPage() {
   const { t } = useTranslation();
@@ -82,20 +82,20 @@ export function DashboardPage() {
           </section>
           <section className="dashboard-grid">
             <article className="card chart-card wide">
-              <div className="card-header"><div><h3>Ventas por país</h3><p>Comparación del período seleccionado</p></div><TrendingUp size={18} color="#2563EB" /></div>
+              <div className="card-header"><div><h3>Ventas por país</h3><p>Comparación del período seleccionado</p></div><TrendingUp size={18} color="#0A4174" /></div>
               <div className="chart-body">
                 <ResponsiveContainer width="100%" height="100%"><BarChart data={data.charts.salesByCountry} margin={{ top: 10, right: 5, left: -15, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e8edf4" /><XAxis dataKey="country" axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: "#64748B" }} /><YAxis axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: "#94A3B8" }} />
-                  <Tooltip contentStyle={{ border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 10 }} formatter={(value) => formatMoney(Number(value))} /><Bar dataKey="value" fill="#2563EB" radius={[5, 5, 0, 0]} maxBarSize={42} />
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#D7E6EF" /><XAxis dataKey="country" axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: "#49769F" }} /><YAxis axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: "#6EA2B3" }} />
+                  <Tooltip contentStyle={{ border: "1px solid #BDD8E9", borderRadius: 8, fontSize: 10 }} formatter={(value) => formatMoney(Number(value))} /><Bar dataKey="value" fill="#0A4174" radius={[5, 5, 0, 0]} maxBarSize={42} />
                 </BarChart></ResponsiveContainer>
               </div>
             </article>
             <article className="card chart-card">
               <div className="card-header"><div><h3>Evolución mensual</h3><p>Tendencia consolidada</p></div></div>
               <div className="chart-body"><ResponsiveContainer width="100%" height="100%"><AreaChart data={data.charts.monthlyEvolution} margin={{ top: 10, right: 8, left: -20, bottom: 0 }}>
-                <defs><linearGradient id="salesArea" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#2563EB" stopOpacity={0.25}/><stop offset="95%" stopColor="#2563EB" stopOpacity={0}/></linearGradient></defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e8edf4" /><XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 8, fill: "#64748B" }} /><YAxis axisLine={false} tickLine={false} tick={{ fontSize: 8, fill: "#94A3B8" }} />
-                <Tooltip contentStyle={{ border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 10 }} formatter={(value) => formatMoney(Number(value))} /><Area type="monotone" dataKey="value" stroke="#2563EB" strokeWidth={2} fill="url(#salesArea)" />
+                <defs><linearGradient id="salesArea" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#4E8EA2" stopOpacity={0.32}/><stop offset="95%" stopColor="#7BBDE8" stopOpacity={0}/></linearGradient></defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#D7E6EF" /><XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 8, fill: "#49769F" }} /><YAxis axisLine={false} tickLine={false} tick={{ fontSize: 8, fill: "#6EA2B3" }} />
+                <Tooltip contentStyle={{ border: "1px solid #BDD8E9", borderRadius: 8, fontSize: 10 }} formatter={(value) => formatMoney(Number(value))} /><Area type="monotone" dataKey="value" stroke="#4E8EA2" strokeWidth={2} fill="url(#salesArea)" />
               </AreaChart></ResponsiveContainer></div>
             </article>
             <article className="card chart-card">

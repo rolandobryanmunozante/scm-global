@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { buildReportWorkbook } from "../src/shared/xlsx.js";
 
 describe("exportación XLSX", () => {
-  it("genera un libro válido con resumen, detalle y texto escapado", async () => {
+  it("genera un libro válido con resumen, detalle, proveedores y texto escapado", async () => {
     const buffer = await buildReportWorkbook(
       [
         {
@@ -32,14 +32,25 @@ describe("exportación XLSX", () => {
         "xl/styles.xml",
         "xl/worksheets/sheet1.xml",
         "xl/worksheets/sheet2.xml",
+        "xl/worksheets/sheet3.xml",
       ]),
     );
     const workbook = await zip.file("xl/workbook.xml")!.async("string");
+    const summary = await zip.file("xl/worksheets/sheet1.xml")!.async("string");
     const detail = await zip.file("xl/worksheets/sheet2.xml")!.async("string");
+    const suppliers = await zip.file("xl/worksheets/sheet3.xml")!.async("string");
+    const styles = await zip.file("xl/styles.xml")!.async("string");
     expect(workbook).toContain('name="Resumen"');
     expect(workbook).toContain('name="Detalle"');
+    expect(workbook).toContain('name="Por proveedor"');
+    expect(summary).toContain("SCM Global · Reporte consolidado");
+    expect(summary).toContain('<mergeCell ref="A1:D1"/>');
+    expect(detail).toContain('<autoFilter ref="A5:K6"/>');
     expect(detail).toContain("Proveedor &amp; Asociados");
     expect(detail).toContain("Producto &lt;seguro&gt;");
     expect(detail).toContain("<v>21</v>");
+    expect(suppliers).toContain("Proveedor &amp; Asociados");
+    expect(styles).toContain('rgb="FF001D39"');
+    expect(styles).toContain('rgb="FF7BBDE8"');
   });
 });

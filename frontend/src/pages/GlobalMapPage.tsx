@@ -3,12 +3,14 @@ import {
   ChevronRight,
   Clock3,
   PackageCheck,
+  Plane,
   Radio,
   Search,
+  Ship,
   Truck,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CircleMarker, MapContainer, Popup, TileLayer } from "react-leaflet";
+import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from "react-leaflet";
 import { io } from "socket.io-client";
 import { api, getErrorMessage } from "../api/client";
 import { Alert, LoadingState, PageHeader, StatusBadge, formatDate } from "../components/ui";
@@ -83,6 +85,7 @@ export function GlobalMapPage() {
     () => ({
       active: shipments.length,
       live: shipments.filter((shipment) => shipment.position_state === "EN_VIVO").length,
+      positioned: shipments.filter(hasPosition).length,
       delayed: shipments.filter((shipment) => shipment.is_delayed).length,
       incidents: shipments.filter((shipment) => shipment.status === "INCIDENCIA").length,
     }),
@@ -119,8 +122,9 @@ export function GlobalMapPage() {
             <article className="card live">
               <Radio size={18} />
               <div>
-                <small>Posición en vivo</small>
-                <strong>{metrics.live}</strong>
+                <small>Ubicación disponible</small>
+                <strong>{metrics.positioned}</strong>
+                <span>{metrics.live} con señal en vivo</span>
               </div>
             </article>
             <article className="card delay">
@@ -186,8 +190,9 @@ export function GlobalMapPage() {
                   attribution="&copy; OpenStreetMap contributors"
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
+                <MapSelectionFocus shipment={selected} />
                 {shipments
-                  .filter((shipment) => shipment.current_latitude && shipment.current_longitude)
+                  .filter(hasPosition)
                   .map((shipment) => (
                     <CircleMarker
                       key={shipment.id}
@@ -228,7 +233,13 @@ export function GlobalMapPage() {
               {selected && (
                 <div className="selected-shipment-card">
                   <div className="transport-symbol">
-                    <Truck size={18} />
+                    {selected.transport_mode === "AEREO" ? (
+                      <Plane size={18} />
+                    ) : selected.transport_mode === "MARITIMO" ? (
+                      <Ship size={18} />
+                    ) : (
+                      <Truck size={18} />
+                    )}
                   </div>
                   <div>
                     <span>{selected.tracking_code}</span>
@@ -256,4 +267,26 @@ export function GlobalMapPage() {
       )}
     </>
   );
+}
+
+function hasPosition(shipment: MapShipment) {
+  return (
+    Number.isFinite(Number(shipment.current_latitude)) &&
+    Number.isFinite(Number(shipment.current_longitude))
+  );
+}
+
+function MapSelectionFocus({ shipment }: { shipment: MapShipment | null }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!shipment || !hasPosition(shipment)) return;
+    map.flyTo(
+      [Number(shipment.current_latitude), Number(shipment.current_longitude)],
+      Math.max(map.getZoom(), 8),
+      { animate: true, duration: 1.15 },
+    );
+  }, [map, shipment]);
+
+  return null;
 }

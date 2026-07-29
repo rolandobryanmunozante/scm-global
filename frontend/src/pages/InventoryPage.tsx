@@ -101,6 +101,13 @@ export function InventoryPage() {
       </div>
       {loading ? <LoadingState /> : tab === "stock" ? (
         <>
+          <div className="inventory-availability-note">
+            <Warehouse size={16} />
+            <div>
+              <strong>Lectura de existencias</strong>
+              <span>Disponible = existencia actual menos unidades reservadas. Las reservas en cero se ocultan para facilitar la lectura.</span>
+            </div>
+          </div>
           <div className="toolbar">
             <div className="search-control"><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por código, producto o categoría…" /></div>
             <Warehouse size={15} color="#94a3b8" />
@@ -112,7 +119,17 @@ export function InventoryPage() {
               const low = row.available <= row.minimum_stock; const warning = !low && row.available <= row.minimum_stock * 1.5;
               return <tr key={row.product_id}>
                 <td><strong>{row.product}</strong><small>{row.sku} · {row.category}</small></td>
-                {visibleWarehouses.map((warehouse) => { const value = row.warehouses?.find((item) => Number(item.warehouse_id) === Number(warehouse.id)); return <td key={warehouse.id}><strong>{value?.current ?? 0}</strong><small>{value?.reserved ?? 0} reservado</small></td>; })}
+                {visibleWarehouses.map((warehouse) => {
+                  const value = row.warehouses?.find((item) => Number(item.warehouse_id) === Number(warehouse.id));
+                  const current = value?.current ?? 0;
+                  const reserved = value?.reserved ?? 0;
+                  const available = value?.available ?? current - reserved;
+                  return <td key={warehouse.id} className="warehouse-stock-cell">
+                    <strong>{current}</strong>
+                    <small>{available} disponible{available === 1 ? "" : "s"}</small>
+                    {reserved > 0 && <span>{reserved} reservada{reserved === 1 ? "" : "s"}</span>}
+                  </td>;
+                })}
                 <td>{row.minimum_stock}</td><td><strong>{row.available}</strong><small>Global</small></td>
                 <td><span className={`stock-light ${low ? "red" : warning ? "yellow" : "green"}`}><i />{low ? "Crítico" : warning ? "Bajo" : "Óptimo"}</span></td>
               </tr>;

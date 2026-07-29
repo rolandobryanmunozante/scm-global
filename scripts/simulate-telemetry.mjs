@@ -1,6 +1,10 @@
 const baseUrl = (process.env.SCM_API_URL ?? "http://127.0.0.1:4000/api").replace(/\/$/, "");
 const password = process.env.SCM_DEMO_PASSWORD ?? "SCM2026!";
 const intervalMs = Math.max(500, Number(process.env.SCM_TELEMETRY_INTERVAL_MS ?? 2500));
+const requestTimeoutMs = Math.max(
+  1000,
+  Number(process.env.SCM_TELEMETRY_REQUEST_TIMEOUT_MS ?? 5000),
+);
 const configuredSteps = Math.max(1, Number(process.env.SCM_TELEMETRY_STEPS ?? 12));
 const continuous = process.argv.includes("--continuous");
 const drivers = [
@@ -8,6 +12,7 @@ const drivers = [
   "marco.transportista@scm.local",
   "sofia.transportista@scm.local",
   "diego.transportista@scm.local",
+  "elena.transportista@scm.local",
 ];
 
 const sessions = [];
@@ -80,20 +85,28 @@ do {
 process.stdout.write(`Telemetría finalizada después de ${step} ciclos.\n`);
 
 async function request(path, options = {}) {
-  const response = await fetch(`${baseUrl}${path}`, {
-    method: options.method ?? "GET",
-    headers: {
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
-      ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  });
-  const text = await response.text();
-  let body = {};
   try {
-    body = text ? JSON.parse(text) : {};
-  } catch {
-    body = { raw: text };
+    const response = await fetch(`${baseUrl}${path}`, {
+      method: options.method ?? "GET",
+      headers: {
+        ...(options.body ? { "Content-Type": "application/json" } : {}),
+        ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      signal: AbortSignal.timeout(requestTimeoutMs),
+    });
+    const text = await response.text();
+    let body = {};
+    try {
+      body = text ? JSON.parse(text) : {};
+    } catch {
+      body = { raw: text };
+    }
+    return { status: response.status, body };
+  } catch (cause) {
+    return {
+      status: 0,
+      body: { message: cause instanceof Error ? cause.message : "Error de red" },
+    };
   }
-  return { status: response.status, body };
 }
