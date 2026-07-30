@@ -1,12 +1,16 @@
 # Diagrama entidad-relación
 
 Este archivo es el código fuente del diagrama de la base de datos. GitHub representa
-automáticamente el bloque Mermaid como un diagrama navegable. Las relaciones reflejan
-las migraciones `001_schema.sql`, `003_integrity_workflows.sql`,
-`004_logistics_flow_semantics.sql` y `005_inbound_state_consistency.sql`.
+automáticamente el bloque Mermaid como un diagrama navegable. Las relaciones y campos
+reflejan el esquema acumulado de las migraciones `001` a `014`.
 
 ```mermaid
 erDiagram
+    SCHEMA_MIGRATIONS {
+        text filename PK
+        timestamptz applied_at
+    }
+
     ROLES {
         bigint id PK
         varchar code UK
@@ -69,6 +73,16 @@ erDiagram
         numeric quality
         numeric price
         numeric weighted_score
+    }
+
+    SUPPLIER_PRODUCTS {
+        bigint supplier_id PK, FK
+        bigint product_id PK, FK
+        numeric unit_price
+        varchar supplier_sku
+        boolean active
+        timestamptz created_at
+        timestamptz updated_at
     }
 
     PRODUCTS {
@@ -142,6 +156,8 @@ erDiagram
         enum status
         boolean automatic
         date expected_delivery_date
+        timestamptz supplier_confirmed_at
+        text supplier_document_url
         timestamptz received_at
     }
 
@@ -160,6 +176,7 @@ erDiagram
         varchar name
         enum transport_mode
         enum purpose
+        jsonb stops
         numeric estimated_distance_km
         numeric estimated_duration_hours
         boolean customs_required
@@ -190,6 +207,11 @@ erDiagram
         bigint destination_warehouse_id FK
         enum flow_type
         enum status
+        numeric total_weight_kg
+        numeric total_volume_m3
+        numeric current_latitude
+        numeric current_longitude
+        integer delay_minutes
         timestamptz departure_at
         timestamptz eta_at
         timestamptz delivered_at
@@ -210,6 +232,7 @@ erDiagram
         bigint user_id FK
         enum event_type
         enum status
+        enum incident_type
         text description
         numeric latitude
         numeric longitude
@@ -264,6 +287,8 @@ erDiagram
 
     SUPPLIERS ||--o{ SUPPLIER_RATINGS : recibe
     USERS ||--o{ SUPPLIER_RATINGS : evalua
+    SUPPLIERS ||--o{ SUPPLIER_PRODUCTS : ofrece
+    PRODUCTS ||--o{ SUPPLIER_PRODUCTS : pertenece
     SUPPLIERS ||--o{ PURCHASE_ORDERS : atiende
     USERS o|--o{ PURCHASE_ORDERS : genera
     USERS o|--o{ PURCHASE_ORDERS : aprueba
@@ -310,6 +335,7 @@ erDiagram
 - `purchase_order_items`, `shipment_items` y `stock_transfer_items` usan claves
   compuestas para impedir repetir un producto dentro del mismo documento.
 - Una orden de compra puede originar como máximo un envío.
+- Los productos de una orden deben pertenecer al catálogo histórico de su proveedor.
 - Una entrada de compra exige orden y almacén de destino, y nunca descuenta un
   almacén de origen.
 - Una salida de distribución exige un almacén de origen y no puede vincular una
@@ -318,6 +344,8 @@ erDiagram
   tipos de flujo.
 - La asignación deja el envío `ASIGNADO`; solo la aceptación del conductor inicia
   el viaje y el despacho.
+- El vehículo asignado debe estar activo, libre, tener capacidad y utilizar el mismo
+  modo de transporte que la ruta.
 - Un arribo a almacén queda `PENDIENTE_RECEPCION` y no cambia existencias.
 - En una compra transportada, la orden `RECIBIDA` y el envío `ENTREGADO` se
   confirman juntos cuando Inventario acepta físicamente la carga.
@@ -326,3 +354,5 @@ erDiagram
   transacciones para mantener sincronizadas todas las tablas relacionadas.
 - Productos, proveedores, almacenes, rutas, vehículos y usuarios se desactivan
   lógicamente cuando conservan historial asociado.
+- `schema_migrations` garantiza que cada archivo SQL se aplique una sola vez y en
+  orden lexicográfico.

@@ -6,6 +6,8 @@ La [guía completa de instalación, operación y despliegue](docs/GUIA_INSTALACI
 La [matriz de cumplimiento](docs/CUMPLIMIENTO_REQUISITOS.md) relaciona las 25 historias con su evidencia y límites, y la [arquitectura de datos](docs/ARQUITECTURA_Y_DATOS.md) describe los flujos transaccionales.
 La [guía de presentación integral](docs/GUIA_PRESENTACION_DEMO.md) propone un recorrido demostrativo con los nueve roles, compra entrante, distribución entre almacenes, rastreo, reportes y auditoría.
 La [guía de actualización para el equipo](docs/GUIA_ACTUALIZACION_EQUIPO.md) explica cómo recibir `main`, las imágenes Docker y las migraciones sin perder datos.
+El [manual completo](docs/MANUAL_COMPLETO_SCM_GLOBAL.md) documenta todas las pantallas,
+cuentas, responsabilidades, flujos, instalación, administración y solución de problemas.
 
 ## Arranque rápido con Docker
 
@@ -50,7 +52,9 @@ También se pueden construir desde el código fuente mediante
 `docker compose up -d --build --wait`. La primera ejecución crea el esquema de
 PostgreSQL y carga los datos demostrativos. En cada arranque, el servicio `migrate`
 aplica únicamente migraciones pendientes; las siguientes ejecuciones conservan la
-información.
+información. En Windows, `iniciar-scm.ps1` también ejecuta una verificación de
+integridad y muestra automáticamente los registros de PostgreSQL, migraciones y
+backend si el arranque falla.
 
 Accesos:
 
@@ -86,6 +90,12 @@ Todos los usuarios demostrativos utilizan la contraseña `SCM2026!`:
 | Proveedor Brasil Components | `proveedor.brasil@scm.local` |
 | Proveedor Pacífico Foods | `proveedor.pacifico@scm.local` |
 | Proveedor Salud Global | `proveedor.salud@scm.local` |
+
+La instalación también incluye cuentas alternas para cada rol y ocho conductores
+libres (`transportista.libre01@scm.local` a
+`transportista.libre08@scm.local`). Consulte el
+[manual completo](docs/MANUAL_COMPLETO_SCM_GLOBAL.md#4-cuentas-de-demostración)
+para ver las 41 cuentas.
 
 Cambie `JWT_SECRET` y las contraseñas de `.env` antes de un despliegue público.
 
@@ -153,6 +163,8 @@ Luego apunte el proxy HTTPS del servidor al puerto `8080`. El frontend usa rutas
 - Reportes PDF y Excel.
 - Auditoría de acciones, preferencias de notificación e infraestructura parcial de idiomas español, inglés y portugués.
 - Interfaz adaptable a escritorio, tableta y móvil.
+- Tema claro y oscuro con cobertura de formularios, tablas, estados, mapas y reportes.
+- Demo automática de sólo lectura con los nueve roles, controles y pantalla completa.
 
 El PDF identifica como fuera del MVP las integraciones aduaneras externas, aplicación móvil nativa, multimoneda, predicción por aprendizaje automático, simulaciones, integración con ERP y huella de carbono. Se respetó esa delimitación.
 
@@ -178,6 +190,7 @@ Las migraciones se ejecutan automáticamente en una base nueva:
 - `database/migrations/011_operational_handoffs_and_route_countries.sql`: relevo estricto entre roles, cuentas de proveedor y normalización de países en rutas.
 - `database/migrations/012_repair_historical_direct_receipts.sql`: reconstrucción auditable de recepciones antiguas que no tenían envío.
 - `database/migrations/013_route_purpose_endpoint_consistency.sql`: clasificación y restricción de rutas según sus almacenes extremos.
+- `database/migrations/014_demo_accounts_and_available_fleet.sql`: cuentas alternas por rol y reserva de conductores/vehículos disponibles para demostraciones.
 
 `database/migrate.sh` registra cada archivo aplicado en `schema_migrations`. La información persiste en el volumen `scm_postgres_data`, normalmente prefijado con el nombre del proyecto Compose.
 
@@ -206,12 +219,15 @@ no afirma conectividad con un dispositivo físico.
 En una instalación Docker descartable:
 
 ```powershell
+.\probar-instalacion-limpia.ps1 -Build
 pnpm verify:system
 pnpm verify:workflows
 docker compose exec -T postgres psql -U scm_user -d scm_global -v ON_ERROR_STOP=1 -f /database/verify.sql
 ```
 
-`verify:workflows` crea registros de prueba; no se recomienda ejecutarlo sobre producción.
+`probar-instalacion-limpia.ps1` crea un proyecto Docker aislado, utiliza puertos
+temporales y elimina únicamente ese entorno al terminar. `verify:workflows` crea
+registros de prueba; no se recomienda ejecutarlo sobre producción.
 
 Estructura:
 
@@ -221,5 +237,6 @@ database/migrations/     esquema y datos iniciales
 frontend/                aplicación React
 docker-compose.yml       orquestación completa
 iniciar-scm.ps1          arranque asistido para Windows
+probar-instalacion-limpia.ps1  validación aislada de una instalación nueva
 detener-scm.ps1          detención conservando datos
 ```

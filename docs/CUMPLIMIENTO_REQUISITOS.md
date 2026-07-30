@@ -1,6 +1,6 @@
 # Matriz de cumplimiento del documento del proyecto
 
-Fecha de revisión: 27 de julio de 2026.
+Fecha de revisión: 29 de julio de 2026.
 
 Esta matriz contrasta el documento **Sistema Global de Gestión de la Cadena de Suministro** con el código, la base de datos y los flujos verificables del repositorio. La prioridad alta constituye el MVP. Las funciones externas o experimentales se mantienen identificadas para no confundir una interfaz demostrativa con una integración real.
 
@@ -11,6 +11,11 @@ Esta matriz contrasta el documento **Sistema Global de Gestión de la Cadena de 
 - La trazabilidad completa de producto, aunque era prioridad baja, está implementada.
 - Las relaciones operativas compra–envío–inventario ahora son transaccionales y auditables.
 - Los nueve roles demostrativos fueron probados tanto para accesos permitidos como denegados.
+- Una instalación limpia completa, las migraciones, la integridad de datos y la
+  reserva de recursos pueden comprobarse con `probar-instalacion-limpia.ps1`.
+- Existen 41 cuentas activas, 13 transportistas y flota de respaldo para los tres
+  modos en los datos de demostración.
+- La vista **Demo automática** presenta los nueve roles y relevos sin mutar datos.
 - Las funciones no implementadas no son necesarias para operar el MVP y permanecen explícitamente fuera del alcance actual.
 
 ## Historias de usuario
@@ -64,9 +69,22 @@ Los tokens no conservan permisos obsoletos: cada petición valida que el usuario
 - Una orden recibida exige usuario, fecha y almacén de recepción.
 - Un envío de compra copia exactamente los productos/cantidades de su orden y una orden solo puede vincularse a un envío.
 - Un envío de distribución reserva stock al crearse y lo descuenta cuando el transportista acepta la carga asignada.
+- Un vehículo sólo puede asignarse si su modo coincide con la ruta, además de
+  capacidad, actividad y disponibilidad.
 - Una entrega dirigida a un almacén crea los movimientos de entrada correspondientes.
 - Los cambios de inventario, compras, usuarios, rutas, flota y proveedores se registran en auditoría.
-- `database/verify.sql` comprueba permisos, licencias, vínculos, detalles obligatorios, stock y coincidencia orden–envío.
+- `database/verify.sql` comprueba permisos, licencias, cuentas de respaldo, vínculos,
+  detalles obligatorios, stock, modo de transporte y coincidencia orden–envío.
+
+## Evidencia de operación y presentación
+
+- `docs/MANUAL_COMPLETO_SCM_GLOBAL.md`: manual de usuario, administración y soporte.
+- `docs/GUIA_PRESENTACION_DEMO.md`: recorrido automático y guion manual.
+- `docs/DIAGRAMA_BASE_DATOS.md`: entidad-relación acumulado hasta migración `014`.
+- `pnpm check`: tipos, pruebas y compilaciones.
+- `pnpm verify:system`: acceso permitido/denegado de los nueve roles.
+- `pnpm verify:workflows`: compra, distribución, modo de vehículo, recepción y stock.
+- `database/verify.sql`: restricciones y coherencia acumulada.
 
 ## Límites conscientes
 

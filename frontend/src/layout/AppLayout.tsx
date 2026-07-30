@@ -14,6 +14,7 @@ import {
   Menu,
   Moon,
   PackageSearch,
+  Presentation,
   Route,
   Settings,
   Sun,
@@ -90,6 +91,12 @@ export function AppLayout({ children }: { children: ReactNode }) {
         label: t("nav.users"),
         icon: Users,
         permissions: ["users.manage"],
+      },
+      {
+        to: "/demo-presentacion",
+        label: "Demo automática",
+        icon: Presentation,
+        permissions: ["reports.read"],
       },
       {
         to: "/portal-proveedor",

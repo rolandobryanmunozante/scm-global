@@ -1318,3 +1318,43 @@ tr:hover .row-actions {
     display: none;
   }
 }
+
+/* Ajustes globales que mantienen contraste y legibilidad en tema oscuro. */
+:root[data-theme="dark"] :is(
+  .empty-state-icon,
+  .tabs button.active,
+  .status-badge.neutral,
+  .avatar
+) {
+  color: #bdd8e9;
+  border-color: var(--border);
+  background: #153a58;
+}
+
+:root[data-theme="dark"] .status-badge.success {
+  color: #a7f3d0;
+  background: #0d3027;
+}
+
+:root[data-theme="dark"] .status-badge.warning {
+  color: #fde68a;
+  background: #35260c;
+}
+
+:root[data-theme="dark"] .status-badge.danger {
+  color: #fecdd3;
+  background: #351522;
+}
+
+:root[data-theme="dark"] :is(.tabs button, .button:hover, .icon-button:hover) {
+  border-color: var(--border);
+}
+
+:root[data-theme="dark"] :is(.field input, .field select, .field textarea) {
+  color-scheme: dark;
+}
+
+:root[data-theme="dark"] option {
+  color: #e7f3f8;
+  background: #081b2c;
+}

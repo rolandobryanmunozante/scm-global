@@ -12,6 +12,10 @@ La forma recomendada es Docker:
 - Al menos 2 GB de RAM libre y 2 GB de espacio en disco.
 - Puertos locales libres: `8080`, `4000` y `5435`.
 
+En Windows, Docker Desktop debe mostrar el motor iniciado. Si utiliza WSL 2,
+compruebe que la virtualización esté habilitada. Node.js y pnpm no son necesarios
+para ejecutar las imágenes publicadas.
+
 Verifique la instalación:
 
 ```bash
@@ -108,6 +112,14 @@ docker compose pull
 docker compose up -d --no-build --wait
 ```
 
+Además, el iniciador:
+
+1. valida Docker, Compose y `.env`;
+2. espera la migración;
+3. espera los servicios saludables;
+4. ejecuta `database/verify.sql`;
+5. muestra estado y registros útiles cuando falla PostgreSQL, migración o backend.
+
 Las imágenes de backend y frontend se publican automáticamente en GitHub Container
 Registry después de cada cambio aceptado en `main`. La primera ejecución crea
 PostgreSQL 16, ejecuta las migraciones y carga datos de demostración.
@@ -125,6 +137,26 @@ docker compose ps
 ```
 
 Los servicios `postgres`, `backend` y `frontend` deben indicar `healthy`. `migrate` debe aparecer como terminado correctamente (`Exited (0)`).
+
+## 4.1 Prueba certificada de instalación nueva
+
+El repositorio incluye una prueba aislada que no utiliza ni elimina el volumen de la
+instalación principal:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\probar-instalacion-limpia.ps1
+```
+
+Para verificar el código local antes de publicar imágenes:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\probar-instalacion-limpia.ps1 -Build
+```
+
+La prueba selecciona puertos temporales, crea un nombre de proyecto Docker aleatorio,
+ejecuta todas las migraciones desde `001` en una base vacía, valida integridad,
+autenticación y recursos disponibles, y elimina únicamente sus propios contenedores,
+red y volumen.
 
 ## 5. Acceder
 
@@ -300,6 +332,45 @@ docker compose logs --tail 200 postgres
 docker compose logs --tail 200 frontend
 ```
 
+El script `iniciar-scm.ps1` imprime estos diagnósticos automáticamente cuando el
+arranque falla.
+
+### PostgreSQL indica contraseña, rol o base inexistente
+
+En una máquina realmente nueva no debe existir un volumen anterior. Si aparece
+`password authentication failed`, `role ... does not exist` o
+`database ... does not exist`, normalmente se reutilizó un volumen creado con otro
+archivo `.env`.
+
+Si la base contiene información importante:
+
+1. no ejecute `down -v`;
+2. conserve `.env`;
+3. revise `docker compose logs postgres migrate`;
+4. recupere la contraseña original o haga una copia antes de modificar el volumen.
+
+Si es una copia exclusivamente demostrativa y confirma que no necesita sus datos:
+
+```powershell
+docker compose down
+docker compose down -v
+powershell -ExecutionPolicy Bypass -File .\iniciar-scm.ps1
+```
+
+`down -v` elimina permanentemente la base local de ese proyecto. No debe utilizarse
+como solución rutinaria ni en producción.
+
+### El puerto de PostgreSQL está ocupado
+
+Cambie únicamente el puerto publicado en `.env`, por ejemplo:
+
+```text
+POSTGRES_PORT=55435
+```
+
+El backend dentro de Docker seguirá conectándose a `postgres:5432`. Si también están
+ocupados los puertos web, cambie `WEB_PORT` o `BACKEND_PORT`.
+
 ### Agregué una migración pero no se ejecutó
 
 Cada archivo nuevo de `database/migrations` debe tener un prefijo numérico superior y no debe reutilizar el nombre de una migración aplicada. El servicio `migrate` lo ejecuta en el siguiente `docker compose up`. Consulte:
@@ -310,6 +381,18 @@ docker compose exec -T postgres psql -U scm_user -d scm_global -c "TABLE schema_
 ```
 
 No edite una migración aplicada ni use `down -v` durante una actualización normal.
+
+### La base inicia pero la verificación de integridad falla
+
+Ejecute:
+
+```powershell
+docker compose exec -T postgres psql -U scm_user -d scm_global -v ON_ERROR_STOP=1 -f /database/verify.sql
+docker compose logs --tail 200 migrate backend
+```
+
+No corrija estados directamente con SQL. Guarde los resultados y aplique una
+migración de reparación versionada.
 
 ### No llegan correos
 

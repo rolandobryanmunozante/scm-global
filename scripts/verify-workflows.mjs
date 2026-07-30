@@ -308,6 +308,21 @@ assert.equal(afterReservation.current, originBefore.current);
 assert.equal(afterReservation.reserved, originBefore.reserved + 2);
 
 const vehicles = await ok("/transporte/vehiculos", { token: logistics.token });
+const incompatibleVehicle = vehicles.find(
+  (item) =>
+    item.available &&
+    item.active &&
+    item.transport_mode !== route.transport_mode &&
+    Number(item.capacity_kg) >= 250 &&
+    Number(item.capacity_m3) >= 2,
+);
+assert.ok(incompatibleVehicle, "No existe un vehículo de modo incompatible para validar el rechazo");
+await ok(`/transporte/envios/${shipment.id}/asignar`, {
+  method: "PATCH",
+  token: logistics.token,
+  expected: 409,
+  body: { vehicle_id: incompatibleVehicle.id, driver_id: driver.user.id },
+});
 const vehicle = vehicles.find(
   (item) =>
     item.available &&
