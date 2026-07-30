@@ -1,86 +1,120 @@
-# Guía de presentación de SCM Global
+# Guía de demo operativa de SCM Global
 
-Esta guía ofrece dos modalidades:
+La demo operativa no es una presentación de diapositivas. Ejecuta un caso real de
+punta a punta usando los mismos endpoints, validaciones, permisos, reportes y tablas
+que utiliza la aplicación.
 
-1. demo automática de 3 a 5 minutos, sin modificar datos;
-2. demostración manual de 20 a 30 minutos, con participación real de los nueve roles.
+Para que esa automatización no pueda dañar los datos normales, se levanta como una
+segunda instalación local totalmente aislada:
 
-Todas las cuentas usan la contraseña `SCM2026!`.
+| Recurso | Sistema normal | Demo operativa |
+|---|---:|---:|
+| Web | `http://localhost:8080` | `http://localhost:8081` |
+| API | `http://localhost:4000` | `http://localhost:4001` |
+| PostgreSQL | `localhost:5435` | `localhost:5436` |
+| Proyecto Compose | predeterminado | `scm-global-demo` |
+| Volumen de datos | normal | exclusivo de la demo |
+| `DEMO_MODE` | `false` | `true` |
 
-## 1. Preparación
+El endpoint que entrega las sesiones temporales de los roles se niega a funcionar
+si `DEMO_MODE` no está habilitado. También exige que quien inicia el recorrido sea
+Administrador. Por ello, la automatización no está disponible accidentalmente en
+una instalación normal o productiva.
+
+Todas las cuentas demostrativas usan la contraseña `SCM2026!`.
+
+## 1. Preparación recomendada
+
+Con Docker Desktop iniciado, abra PowerShell en la raíz del repositorio y ejecute:
 
 ```powershell
-cd "ruta\del\repositorio\scm-global"
 git switch main
 git pull --ff-only origin main
-powershell -ExecutionPolicy Bypass -File .\iniciar-scm.ps1
-docker compose ps
+powershell -ExecutionPolicy Bypass -File .\iniciar-demo-en-vivo.ps1 -Reiniciar
 ```
 
-El iniciador comprueba la integridad de la base. `postgres`, `backend` y `frontend`
-deben indicar `healthy`; `migrate` debe terminar con código 0.
+`-Reiniciar` elimina únicamente el volumen aislado de la demo, vuelve a cargar los
+datos iniciales y garantiza una presentación reproducible. No detiene ni borra la
+instalación normal de `http://localhost:8080`.
 
-Para certificar una instalación completamente nueva:
+Si está desarrollando cambios locales todavía no publicados en las imágenes:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\probar-instalacion-limpia.ps1
+powershell -ExecutionPolicy Bypass -File .\iniciar-demo-en-vivo.ps1 -Reiniciar -Build
 ```
 
-Direcciones:
-
-- aplicación: <http://localhost:8080>;
-- salud: <http://localhost:4000/api/health>;
-- rastreo: <http://localhost:8080/rastreo>;
-- incidencia: <http://localhost:8080/rastreo/SCM-BR-2026-003>;
-- retraso: <http://localhost:8080/rastreo/SCM-AR-2026-004>;
-- tránsito: <http://localhost:8080/rastreo/SCM-BO-2026-007>.
-
-Docker actualiza la telemetría demostrativa cada 15 segundos. Compruébela con:
+Para detener la demo conservando sus datos:
 
 ```powershell
-docker compose logs -f telemetry-demo
+powershell -ExecutionPolicy Bypass -File .\iniciar-demo-en-vivo.ps1 -Detener
 ```
 
-## 2. Modalidad automática
+Para certificar todo el recorrido desde la terminal:
 
-1. Inicie sesión como `admin@scm.local`.
-2. Abra **Demo automática** en el menú.
-3. Pulse **Pantalla completa**.
-4. Deje avanzar las 14 diapositivas o use las flechas.
-5. Pulse **Pausar** cuando quiera explicar un punto.
+```powershell
+$env:SCM_API_URL="http://127.0.0.1:4001/api"
+pnpm.cmd verify:demo
+```
 
-La demo recorre:
+La comprobación debe finalizar indicando nueve roles, el código de orden, el código
+de rastreo, el aumento de stock y la generación de PDF y Excel.
 
-- visión integral;
-- Administrador;
-- Compras;
-- Proveedor;
-- Logística;
-- Transportista;
-- Inventario;
-- Gerencia;
-- Auditor;
-- Cliente;
-- compra entrante;
-- distribución;
-- rastreo, mapa y reportes;
-- cierre.
+## 2. Ejecución en vivo
 
-Es una vista de sólo lectura: no crea órdenes, no asigna recursos, no cambia stock y
-no altera sesiones. Puede repetirse sin reiniciar la base.
+1. Abra <http://localhost:8081>.
+2. Inicie sesión como `admin@scm.local`.
+3. Abra **Demo operativa** en el menú.
+4. Opcionalmente active **Pantalla completa**.
+5. Pulse **Iniciar flujo completo**.
 
-Atajos:
+La pantalla muestra en tiempo real el rol activo, el paso actual, el porcentaje, los
+identificadores creados, el stock antes y después, y un registro cronológico. Puede
+pausar para explicar un paso, continuar, cambiar la velocidad o detener el
+orquestador de forma controlada.
 
-- `←` y `→`: anterior/siguiente;
-- barra espaciadora: pausar/continuar;
-- **Reiniciar**: vuelve al comienzo.
+El recorrido ejecuta 18 operaciones reales:
+
+1. Administrador valida usuarios y obtiene sesiones temporales limitadas.
+2. Compras consulta el catálogo relacionado con el proveedor.
+3. Compras crea una orden con detalle de producto.
+4. Compras aprueba la orden.
+5. Proveedor confirma la atención y la fecha.
+6. Logística crea una ruta correlacionada.
+7. Logística crea el envío para la orden.
+8. Logística asigna vehículo y conductor compatibles.
+9. Transportista acepta la carga.
+10. Transportista transmite una posición GPS.
+11. Transportista registra un retraso.
+12. Transportista registra una incidencia con descripción.
+13. Transportista resuelve la incidencia.
+14. Transportista confirma la llegada al almacén.
+15. Inventario recibe físicamente la orden y aumenta el stock.
+16. Gerencia consulta indicadores y genera PDF y Excel.
+17. Auditoría comprueba las acciones registradas.
+18. Cliente consulta el rastreo público y su historial.
+
+```mermaid
+flowchart LR
+    ADM["Administrador<br/>habilita la demo"] --> COM["Compras<br/>crea y aprueba"]
+    COM --> PRO["Proveedor<br/>confirma"]
+    PRO --> LOG["Logística<br/>crea ruta, envío y asignación"]
+    LOG --> TRA["Transportista<br/>GPS, retraso, incidencia y entrega"]
+    TRA --> INV["Inventario<br/>recibe y aumenta stock"]
+    INV --> GER["Gerencia<br/>KPI, PDF y Excel"]
+    GER --> AUD["Auditoría<br/>verifica evidencia"]
+    AUD --> CLI["Cliente<br/>rastrea el envío"]
+```
+
+La demo sí crea registros, precisamente porque demuestra el sistema real. La
+seguridad proviene del aislamiento, no de fingir las operaciones. Para repetirla,
+deténgala y vuelva a iniciarla con `-Reiniciar`.
 
 ## 3. Perfiles para la demostración manual
 
 | Turno | Perfil | Usuario | Acción principal |
 |---:|---|---|---|
 | 1 | Gerencia | `gerente@scm.local` | KPI y reportes iniciales. |
-| 2 | Administrador | `admin@scm.local` | Usuarios, roles y demo automática. |
+| 2 | Administrador | `admin@scm.local` | Usuarios, roles y demo operativa. |
 | 3 | Compras | `compras@scm.local` | Crear y aprobar una orden. |
 | 4 | Proveedor | Cuenta del proveedor elegido | Confirmar fecha/documento. |
 | 5 | Logística | `logistica@scm.local` | Crear carga y asignar. |
@@ -140,7 +174,7 @@ Mensaje sugerido: “Gerencia consulta una sola fuente, pero no altera la operac
 2. Abra **Usuarios**.
 3. Filtre por `DRIVER`.
 4. Muestre conductores, licencia y estado.
-5. Abra **Demo automática** para explicar que la presentación segura no muta datos.
+5. Abra **Demo operativa** para explicar el aislamiento y el recorrido real.
 6. Active el tema oscuro y muestre contraste en Dashboard, Inventario y Reportes.
 
 ## 6. Acto B: compra entrante completa
@@ -377,7 +411,15 @@ Espere hasta 15 segundos.
 
 ## 11. Reiniciar datos
 
-La demo automática no requiere reinicio.
+La demo operativa crea datos reales en su volumen aislado. Para repetir exactamente
+el mismo caso:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\iniciar-demo-en-vivo.ps1 -Detener
+powershell -ExecutionPolicy Bypass -File .\iniciar-demo-en-vivo.ps1 -Reiniciar
+```
+
+Estos comandos no tocan el volumen ni los contenedores del sistema normal.
 
 Para una base manual descartable, primero confirme que no existen datos importantes:
 

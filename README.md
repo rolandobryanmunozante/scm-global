@@ -99,6 +99,31 @@ para ver las 41 cuentas.
 
 Cambie `JWT_SECRET` y las contraseñas de `.env` antes de un despliegue público.
 
+## Demo operativa en vivo
+
+Para presentar un flujo completo real sin alterar los datos normales:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\iniciar-demo-en-vivo.ps1 -Reiniciar
+```
+
+Abra <http://localhost:8081>, ingrese como `admin@scm.local` y seleccione
+**Demo operativa**. La demo utiliza una base separada y ejecuta orden, aprobación,
+confirmación, ruta, envío, asignación, GPS, retraso, incidencia, entrega, recepción,
+stock, reportes, auditoría y rastreo con los nueve roles.
+
+```powershell
+# Detener conservando los datos aislados
+powershell -ExecutionPolicy Bypass -File .\iniciar-demo-en-vivo.ps1 -Detener
+
+# Verificación automática del recorrido
+$env:SCM_API_URL="http://127.0.0.1:4001/api"
+pnpm.cmd verify:demo
+```
+
+Consulte la [guía de demo operativa](docs/GUIA_PRESENTACION_DEMO.md) para el guion,
+la arquitectura de aislamiento y la recuperación.
+
 ## Servicios Docker
 
 | Servicio | Tecnología | Puerto |
@@ -164,7 +189,8 @@ Luego apunte el proxy HTTPS del servidor al puerto `8080`. El frontend usa rutas
 - Auditoría de acciones, preferencias de notificación e infraestructura parcial de idiomas español, inglés y portugués.
 - Interfaz adaptable a escritorio, tableta y móvil.
 - Tema claro y oscuro con cobertura de formularios, tablas, estados, mapas y reportes.
-- Demo automática de sólo lectura con los nueve roles, controles y pantalla completa.
+- Demo operativa aislada que ejecuta un flujo real de 18 pasos con los nueve roles,
+  controles, pantalla completa y validación automática.
 
 El PDF identifica como fuera del MVP las integraciones aduaneras externas, aplicación móvil nativa, multimoneda, predicción por aprendizaje automático, simulaciones, integración con ERP y huella de carbono. Se respetó esa delimitación.
 

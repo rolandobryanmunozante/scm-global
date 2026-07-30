@@ -11,7 +11,8 @@
     "check": "pnpm typecheck && pnpm test && pnpm build",
     "demo:telemetry": "node scripts/simulate-telemetry.mjs",
     "verify:system": "node scripts/verify-system.mjs",
-    "verify:workflows": "node scripts/verify-workflows.mjs"
+    "verify:workflows": "node scripts/verify-workflows.mjs",
+    "verify:demo": "node scripts/verify-live-demo.mjs"
   },
   "engines": {
     "node": ">=20",

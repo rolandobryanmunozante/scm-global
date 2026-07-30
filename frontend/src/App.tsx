@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { lazy, Suspense, type ReactNode } from "react";
 import { useAuth } from "./auth/AuthContext";
 import { LoadingState } from "./components/ui";
 import { AppLayout } from "./layout/AppLayout";
@@ -8,7 +8,6 @@ import { InventoryPage } from "./pages/InventoryPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { OperationsGuidePage } from "./pages/OperationsGuidePage";
-import { PresentationDemoPage } from "./pages/PresentationDemoPage";
 import { PurchaseOrdersPage } from "./pages/PurchaseOrdersPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { RoutesPage } from "./pages/RoutesPage";
@@ -24,6 +23,11 @@ import {
   matchRoute,
   useLocation,
 } from "./router";
+
+const PresentationDemoPage = lazy(async () => {
+  const module = await import("./pages/PresentationDemoPage");
+  return { default: module.PresentationDemoPage };
+});
 
 export function App() {
   return (
@@ -73,7 +77,13 @@ function resolveProtectedPage(pathname: string): ReactNode | null {
     ),
     "/notificaciones": <NotificationsPage />,
     "/guia-operativa": <OperationsGuidePage />,
-    "/demo-presentacion": <Permission permission="reports.read"><PresentationDemoPage /></Permission>,
+    "/demo-presentacion": (
+      <Permission permission="users.manage">
+        <Suspense fallback={<LoadingState label="Cargando demo operativa…" />}>
+          <PresentationDemoPage />
+        </Suspense>
+      </Permission>
+    ),
   };
   return routes[pathname] ?? null;
 }

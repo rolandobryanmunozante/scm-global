@@ -9,6 +9,10 @@ const envSchema = z.object({
     .default("postgresql://scm_user:scm_password@localhost:5432/scm_global"),
   JWT_SECRET: z.string().min(16).default("local-development-secret-change-me"),
   WEB_ORIGIN: z.string().default("http://localhost:5173"),
+  DEMO_MODE: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().default(587),
   SMTP_USER: z.string().optional(),

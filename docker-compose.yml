@@ -52,6 +52,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-scm_user}:${POSTGRES_PASSWORD:-scm_password}@postgres:5432/${POSTGRES_DB:-scm_global}
       JWT_SECRET: ${JWT_SECRET:-change-this-secret-in-production}
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:8080,http://127.0.0.1:8080}
+      DEMO_MODE: ${DEMO_MODE:-false}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}

@@ -1358,3 +1358,42 @@ tr:hover .row-actions {
   color: #e7f3f8;
   background: #081b2c;
 }
+
+.fatal-error {
+  width: min(680px, calc(100% - 32px));
+  margin: 12vh auto;
+  padding: 32px;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.fatal-error span {
+  color: #b91c1c;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: .09em;
+}
+
+.fatal-error h1 {
+  margin: 9px 0;
+  font-size: 26px;
+}
+
+.fatal-error p {
+  color: var(--secondary);
+  line-height: 1.6;
+}
+
+.fatal-error button {
+  margin-top: 12px;
+  padding: 10px 15px;
+  color: white;
+  border: 0;
+  border-radius: 9px;
+  background: #0a4174;
+  font-weight: 750;
+  cursor: pointer;
+}

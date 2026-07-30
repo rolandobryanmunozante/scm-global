@@ -98,12 +98,18 @@ Para ver el proceso automático de Docker:
 docker compose logs -f telemetry-demo
 ```
 
-## Presentación automática
+## Demo operativa
 
-Inicie sesión como Administrador o Gerencia y abra **Demo automática**. La vista
-recorre los nueve roles y los flujos de compra/distribución sin modificar registros.
-Puede pausarse, reiniciarse y utilizarse a pantalla completa. El guion manual sigue
-disponible en `docs/GUIA_PRESENTACION_DEMO.md`.
+Inicie el entorno aislado y reproducible:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\iniciar-demo-en-vivo.ps1 -Reiniciar
+```
+
+Abra <http://localhost:8081>, ingrese como Administrador y seleccione
+**Demo operativa**. Ejecuta 18 operaciones reales con los nueve roles sin modificar
+la base normal. Puede pausarse, detenerse y utilizarse a pantalla completa. El guion
+completo está en `docs/GUIA_PRESENTACION_DEMO.md`.
 
 ## Recuperación y cuidado de datos
 

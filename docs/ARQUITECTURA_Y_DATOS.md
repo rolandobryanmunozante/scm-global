@@ -131,9 +131,14 @@ docker compose exec -T postgres \
 La [guía de roles y flujos](GUIA_FLUJOS_OPERATIVOS.md) contiene ejemplos
 reproducibles y los cambios de datos esperados en cada etapa.
 
-## Presentación automática
+## Demo operativa en vivo
 
-`PresentationDemoPage` es una vista React de sólo lectura. No cambia autenticación,
-roles ni datos: representa los nueve participantes y los relevos mediante 14
-diapositivas temporizadas. La demostración funcional real continúa usando las mismas
-rutas REST y WebSocket que la aplicación.
+`PresentationDemoPage` funciona como monitor y orquestador de un flujo real de 18
+pasos. Consume las mismas rutas REST de órdenes, proveedores, rutas, envíos,
+transporte, inventario, reportes, auditoría y rastreo que la operación manual.
+
+El módulo `/api/demo` no replica la lógica de negocio: únicamente verifica
+`DEMO_MODE`, exige el permiso administrativo `users.manage` y emite sesiones
+efímeras para cada rol. La lógica y las restricciones siguen dentro de los módulos
+normales. Docker ejecuta la demo con otro nombre de proyecto, volumen, base y puertos,
+evitando que sus escrituras alcancen la instalación normal.
