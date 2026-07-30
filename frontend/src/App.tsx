@@ -8,6 +8,7 @@ import { InventoryPage } from "./pages/InventoryPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { OperationsGuidePage } from "./pages/OperationsGuidePage";
+import { PresentationDemoPage } from "./pages/PresentationDemoPage";
 import { PurchaseOrdersPage } from "./pages/PurchaseOrdersPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { RoutesPage } from "./pages/RoutesPage";
@@ -72,6 +73,7 @@ function resolveProtectedPage(pathname: string): ReactNode | null {
     ),
     "/notificaciones": <NotificationsPage />,
     "/guia-operativa": <OperationsGuidePage />,
+    "/demo-presentacion": <Permission permission="reports.read"><PresentationDemoPage /></Permission>,
   };
   return routes[pathname] ?? null;
 }

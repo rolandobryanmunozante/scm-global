@@ -85,6 +85,9 @@ No existe recepción directa de una orden. El backend exige confirmación del pr
 envío, asignación, aceptación del conductor y arribo antes de permitir que Inventario
 registre existencias. Así ningún rol puede saltarse el relevo anterior.
 
+La asignación exige además que el modo del vehículo sea igual al modo de la ruta.
+Una ruta terrestre no muestra ni acepta contenedores marítimos o carga aérea.
+
 ## Ejemplo B: distribución que sale de la empresa
 
 Objetivo: demostrar reserva, despacho y recepción relacionada entre almacenes.
@@ -147,7 +150,17 @@ pnpm verify:workflows
 docker compose exec -T postgres psql -U scm_user -d scm_global -v ON_ERROR_STOP=1 -f /database/verify.sql
 ```
 
+Para comenzar desde una base completamente vacía sin tocar la instalación actual:
+
+```powershell
+.\probar-instalacion-limpia.ps1 -Build
+```
+
 `verify:workflows` crea registros de prueba. No debe ejecutarse en una base de
 producción. `verify.sql` es de solo lectura y comprueba, entre otras reglas, que cada
 envío tenga productos, que el stock no sea negativo y que propósito, tipo de flujo,
 orden y almacenes sean consistentes.
+
+La instalación demostrativa mantiene ocho conductores de respaldo libres y vehículos
+adicionales por modo para que los escenarios históricos no bloqueen una nueva
+asignación durante la exposición.

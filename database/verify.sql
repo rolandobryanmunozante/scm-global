@@ -38,6 +38,34 @@ BEGIN
   END IF;
 
   SELECT COUNT(*) INTO violations
+  FROM roles role_record
+  WHERE (
+    SELECT COUNT(*)
+    FROM users user_account
+    WHERE user_account.role_id=role_record.id
+      AND user_account.active
+  ) < 2;
+  IF violations > 0 THEN
+    RAISE EXCEPTION 'Hay % roles sin al menos dos cuentas activas de respaldo', violations;
+  END IF;
+
+  SELECT COUNT(*) INTO violations
+  FROM users user_account
+  JOIN roles role_record ON role_record.id=user_account.role_id
+  WHERE role_record.code='DRIVER'
+    AND user_account.active;
+  IF violations < 10 THEN
+    RAISE EXCEPTION 'La instalación demostrativa requiere al menos 10 transportistas activos; existen %', violations;
+  END IF;
+
+  SELECT COUNT(DISTINCT transport_mode) INTO violations
+  FROM vehicles
+  WHERE active;
+  IF violations <> 3 THEN
+    RAISE EXCEPTION 'La flota activa no cubre los tres modos de transporte';
+  END IF;
+
+  SELECT COUNT(*) INTO violations
   FROM role_permissions rp
   JOIN roles r ON r.id=rp.role_id
   JOIN permissions p ON p.id=rp.permission_id
@@ -142,6 +170,15 @@ BEGIN
     AND (s.vehicle_id IS NULL OR s.driver_id IS NULL);
   IF violations > 0 THEN
     RAISE EXCEPTION 'Hay % envíos activos sin transporte o conductor', violations;
+  END IF;
+
+  SELECT COUNT(*) INTO violations
+  FROM shipments shipment
+  JOIN routes route ON route.id=shipment.route_id
+  JOIN vehicles vehicle ON vehicle.id=shipment.vehicle_id
+  WHERE route.transport_mode<>vehicle.transport_mode;
+  IF violations > 0 THEN
+    RAISE EXCEPTION 'Hay % envíos cuyo vehículo no coincide con el modo de la ruta', violations;
   END IF;
 
   SELECT COUNT(*) INTO violations

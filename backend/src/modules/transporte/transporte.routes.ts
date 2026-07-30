@@ -281,7 +281,11 @@ router.patch(
     try {
       await client.query("BEGIN");
       const shipmentResult = await client.query(
-        "SELECT * FROM shipments WHERE id=$1 FOR UPDATE",
+        `SELECT shipment.*, route.transport_mode AS route_transport_mode
+         FROM shipments shipment
+         JOIN routes route ON route.id=shipment.route_id
+         WHERE shipment.id=$1
+         FOR UPDATE OF shipment`,
         [shipmentId],
       );
       const shipment = shipmentResult.rows[0];
@@ -308,6 +312,12 @@ router.patch(
         input.vehicle_id,
       ]);
       const vehicle = vehicleResult.rows[0];
+      if (vehicle && vehicle.transport_mode !== shipment.route_transport_mode) {
+        throw new AppError(
+          409,
+          `El vehículo ${vehicle.plate} no corresponde al modo ${shipment.route_transport_mode} de la ruta`,
+        );
+      }
       if (
         !vehicle ||
         Number(vehicle.capacity_kg) < Number(shipment.total_weight_kg) ||

@@ -18,8 +18,8 @@ powershell -ExecutionPolicy Bypass -File .\iniciar-scm.ps1
 
 El iniciador descarga `backend:latest` y `frontend:latest`, ejecuta las migraciones
 SQL que todavía no estén registradas en `schema_migrations`, inicia la telemetría
-demostrativa y espera hasta que los servicios estén saludables. No elimina el
-volumen ni los registros existentes.
+demostrativa, espera hasta que los servicios estén saludables y ejecuta la
+verificación de integridad. No elimina el volumen ni los registros existentes.
 
 Verifique el resultado:
 
@@ -28,8 +28,27 @@ docker compose ps
 pnpm.cmd verify:system
 ```
 
+La migración `014_demo_accounts_and_available_fleet.sql` añade cuentas de respaldo,
+ocho conductores libres y vehículos terrestres, marítimos y aéreos sin cambiar los
+flujos históricos.
+
 La aplicación queda en <http://localhost:8080> y la salud de la API en
 <http://localhost:4000/api/health>.
+
+## Comprobar una instalación nueva sin tocar la actual
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\probar-instalacion-limpia.ps1
+```
+
+Para probar cambios locales todavía no publicados:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\probar-instalacion-limpia.ps1 -Build
+```
+
+El entorno aislado se elimina automáticamente después de validar base, login y
+recursos disponibles.
 
 ## Desarrollo desde el código local
 
@@ -78,6 +97,13 @@ Para ver el proceso automático de Docker:
 ```powershell
 docker compose logs -f telemetry-demo
 ```
+
+## Presentación automática
+
+Inicie sesión como Administrador o Gerencia y abra **Demo automática**. La vista
+recorre los nueve roles y los flujos de compra/distribución sin modificar registros.
+Puede pausarse, reiniciarse y utilizarse a pantalla completa. El guion manual sigue
+disponible en `docs/GUIA_PRESENTACION_DEMO.md`.
 
 ## Recuperación y cuidado de datos
 
