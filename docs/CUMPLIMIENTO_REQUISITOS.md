@@ -15,7 +15,8 @@ Esta matriz contrasta el documento **Sistema Global de Gestión de la Cadena de 
   reserva de recursos pueden comprobarse con `probar-instalacion-limpia.ps1`.
 - Existen 41 cuentas activas, 13 transportistas y flota de respaldo para los tres
   modos en los datos de demostración.
-- La vista **Demo automática** presenta los nueve roles y relevos sin mutar datos.
+- La **Demo operativa** ejecuta 18 pasos reales con los nueve roles sobre una base
+  Docker aislada y reiniciable.
 - Las funciones no implementadas no son necesarias para operar el MVP y permanecen explícitamente fuera del alcance actual.
 
 ## Historias de usuario
@@ -79,11 +80,12 @@ Los tokens no conservan permisos obsoletos: cada petición valida que el usuario
 ## Evidencia de operación y presentación
 
 - `docs/MANUAL_COMPLETO_SCM_GLOBAL.md`: manual de usuario, administración y soporte.
-- `docs/GUIA_PRESENTACION_DEMO.md`: recorrido automático y guion manual.
+- `docs/GUIA_PRESENTACION_DEMO.md`: demo operativa aislada y guion manual.
 - `docs/DIAGRAMA_BASE_DATOS.md`: entidad-relación acumulado hasta migración `014`.
 - `pnpm check`: tipos, pruebas y compilaciones.
 - `pnpm verify:system`: acceso permitido/denegado de los nueve roles.
 - `pnpm verify:workflows`: compra, distribución, modo de vehículo, recepción y stock.
+- `pnpm verify:demo`: flujo real de 18 pasos, nueve roles, PDF, Excel, auditoría y rastreo.
 - `database/verify.sql`: restricciones y coherencia acumulada.
 
 ## Límites conscientes

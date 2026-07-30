@@ -57,7 +57,7 @@ export function OperationsGuidePage() {
             {can("purchases.read") && <NavLink to="/ordenes" className="button">Ir a órdenes</NavLink>}
             {can("inventory.read") && <NavLink to="/inventario" className="button">Ir a inventario</NavLink>}
             {can("shipments.read") && <NavLink to="/envios" className="button primary">Ir a transporte</NavLink>}
-            {can("reports.read") && <NavLink to="/demo-presentacion" className="button">Iniciar demo automática</NavLink>}
+            {can("users.manage") && <NavLink to="/demo-presentacion" className="button">Iniciar demo operativa</NavLink>}
             {user?.role === "SUPPLIER" && can("supplier.portal") && <NavLink to="/portal-proveedor" className="button primary">Ir al portal</NavLink>}
             {can("tracking.read") && <NavLink to="/rastreo" className="button primary">Rastrear envío</NavLink>}
           </div>

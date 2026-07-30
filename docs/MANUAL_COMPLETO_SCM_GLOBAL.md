@@ -107,7 +107,7 @@ superior se encuentran:
 - cierre de sesión.
 
 El tema se recuerda en el navegador. Los formularios, tablas, tarjetas, reportes,
-estados, modales, mapas y la demo automática tienen estilos específicos para tema
+estados, modales, mapas y la demo operativa tienen estilos específicos para tema
 oscuro.
 
 La sesión expira después de inactividad. Cinco intentos fallidos pueden bloquear
@@ -443,26 +443,35 @@ La opción **Guía operativa** explica:
 
 Es recomendable consultarla antes de ejecutar una presentación manual.
 
-## 18. Demo automática
+## 18. Demo operativa en vivo
 
-La opción **Demo automática** está disponible para perfiles con reportes.
+La opción **Demo operativa** está disponible únicamente al Administrador. No muestra
+diapositivas: orquesta 18 operaciones reales con los nueve roles, desde la creación
+de una orden hasta la recepción, reportes, auditoría y rastreo público.
+
+Debe ejecutarse en el entorno Docker aislado:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\iniciar-demo-en-vivo.ps1 -Reiniciar
+```
 
 Características:
 
-- 14 diapositivas;
-- los nueve roles;
-- compra entrante;
-- distribución;
-- rastreo, mapa, reportes y auditoría;
-- avance automático cada nueve segundos;
-- pausa, anterior, siguiente y reinicio;
-- pantalla completa;
-- tema claro y oscuro;
-- navegación con flechas y barra espaciadora;
-- sólo lectura.
+- base y volumen exclusivos en PostgreSQL;
+- web `8081`, API `4001` y PostgreSQL `5436`;
+- sesiones efímeras de los nueve roles, sólo con `DEMO_MODE=true`;
+- orden, ruta, envío, asignación, GPS, retraso, incidencia y resolución reales;
+- recepción física y comprobación del aumento de stock;
+- generación real de PDF y Excel;
+- validación de auditoría y rastreo público;
+- progreso, actividad, identificadores y bitácora visibles;
+- pausa, continuación, velocidad, detención y pantalla completa;
+- tema claro y oscuro.
 
-Esta demo no inicia sesión como otros usuarios ni crea registros. Es segura para una
-presentación repetida. Para enseñar formularios reales, pause y siga la guía manual.
+La demo sí modifica su base aislada. Nunca debe apuntarse a una base con información
+real. El iniciador configura el aislamiento automáticamente y `-Reiniciar` elimina
+sólo los datos de la demo. Consulte
+[GUIA_PRESENTACION_DEMO.md](GUIA_PRESENTACION_DEMO.md) para el guion completo.
 
 ## 19. Instalación en Windows
 

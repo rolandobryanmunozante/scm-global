@@ -2,6 +2,7 @@ import cors from "cors";
 import express from "express";
 import helmet from "helmet";
 import configuracionRoutes from "./modules/configuracion/configuracion.routes.js";
+import demoRoutes from "./modules/demo/demo.routes.js";
 import inventariosRoutes from "./modules/inventarios/inventarios.routes.js";
 import logisticaRoutes from "./modules/logistica/logistica.routes.js";
 import proveedoresRoutes from "./modules/proveedores/proveedores.routes.js";
@@ -42,6 +43,7 @@ app.use("/api/logistica", logisticaRoutes);
 app.use("/api/transporte", transporteRoutes);
 app.use("/api/reportes", reportesRoutes);
 app.use("/api/configuracion", configuracionRoutes);
+app.use("/api/demo", demoRoutes);
 
 app.use((_request, response) => {
   response.status(404).json({ message: "Ruta no encontrada" });

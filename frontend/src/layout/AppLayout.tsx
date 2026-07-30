@@ -94,9 +94,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
       },
       {
         to: "/demo-presentacion",
-        label: "Demo automática",
+        label: "Demo operativa",
         icon: Presentation,
-        permissions: ["reports.read"],
+        permissions: ["users.manage"],
       },
       {
         to: "/portal-proveedor",

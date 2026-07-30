@@ -38,6 +38,7 @@ jobs:
       - name: Build and start the complete stack
         env:
           JWT_SECRET: ci-only-secret-with-at-least-32-characters
+          DEMO_MODE: "true"
         run: docker compose up -d --build --wait
 
       - name: Verify roles and public flows
@@ -45,6 +46,9 @@ jobs:
 
       - name: Verify purchase, inventory and transport workflows
         run: pnpm verify:workflows
+
+      - name: Verify isolated live demo
+        run: pnpm verify:demo
 
       - name: Verify database integrity
         run: docker compose exec -T postgres psql -U scm_user -d scm_global -v ON_ERROR_STOP=1 -f /database/verify.sql
