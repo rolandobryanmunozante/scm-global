@@ -597,3 +597,6 @@
   .live-demo-state{margin-left:0}
   .live-demo-steps>div,.live-demo-monitor{grid-template-columns:1fr}
 }
+
+/* Public tracking has five operational milestones. */
+.tracking-progress{grid-template-columns:repeat(5,minmax(0,1fr))}

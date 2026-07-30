@@ -50,7 +50,7 @@ cron.schedule(
   { timezone: "America/La_Paz" },
 );
 
-httpServer.listen(config.PORT, async () => {
+httpServer.listen(config.PORT, "0.0.0.0", async () => {
   const database = await checkDatabase();
   console.info(`SCM API listening on http://localhost:${config.PORT}`);
   console.info(`PostgreSQL: ${database ? "connected" : "unavailable"}`);

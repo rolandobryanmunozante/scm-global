@@ -171,6 +171,18 @@ WEB_ORIGIN=https://scm.midominio.com
 
 Luego apunte el proxy HTTPS del servidor al puerto `8080`. El frontend usa rutas relativas y Nginx se comunica con el backend por la red interna de Docker, por lo que no se necesita publicar el puerto `4000` ni el `5435` hacia Internet.
 
+### Publicación demostrativa en Render
+
+El repositorio incluye [`render.yaml`](render.yaml) y
+[`Dockerfile.render`](Dockerfile.render) para publicar el sistema completo como
+un único servicio web. Esta imagen sirve React, la API REST y Socket.IO en el
+mismo dominio, aplica las migraciones sobre PostgreSQL y mantiene la telemetría
+demostrativa activa.
+
+La [guía de despliegue en Render](docs/GUIA_DESPLIEGUE_RENDER.md) describe la
+creación del Blueprint, la validación posterior y las limitaciones del plan
+gratuito. Los secretos y la cadena de conexión no se almacenan en GitHub.
+
 ## Alcance implementado
 
 - Autenticación JWT, recuperación de contraseña, sesiones, permisos y nueve perfiles de acceso.

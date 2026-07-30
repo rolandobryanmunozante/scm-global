@@ -1,5 +1,8 @@
 import cors from "cors";
 import express from "express";
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import helmet from "helmet";
 import configuracionRoutes from "./modules/configuracion/configuracion.routes.js";
 import demoRoutes from "./modules/demo/demo.routes.js";
@@ -14,10 +17,34 @@ import { checkDatabase } from "./shared/db.js";
 import { errorHandler } from "./shared/errors.js";
 
 export const app = express();
+const frontendDistPath =
+  process.env.FRONTEND_DIST_PATH ??
+  join(dirname(fileURLToPath(import.meta.url)), "../../../frontend/dist");
+const frontendIndexPath = join(frontendDistPath, "index.html");
 
 app.set("trust proxy", "loopback, linklocal, uniquelocal");
 app.disable("x-powered-by");
-app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        connectSrc: ["'self'", "ws:", "wss:"],
+        fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
+        imgSrc: [
+          "'self'",
+          "data:",
+          "blob:",
+          "https://*.tile.openstreetmap.org",
+        ],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        upgradeInsecureRequests: null,
+      },
+    },
+  }),
+);
 app.use(
   cors({
     origin: config.WEB_ORIGIN.split(",").map((origin) => origin.trim()),
@@ -44,6 +71,23 @@ app.use("/api/transporte", transporteRoutes);
 app.use("/api/reportes", reportesRoutes);
 app.use("/api/configuracion", configuracionRoutes);
 app.use("/api/demo", demoRoutes);
+
+if (existsSync(frontendIndexPath)) {
+  app.use(
+    express.static(frontendDistPath, {
+      index: false,
+      maxAge: config.NODE_ENV === "production" ? "7d" : 0,
+      immutable: config.NODE_ENV === "production",
+    }),
+  );
+  app.use((request, response, next) => {
+    if (request.method === "GET" && !request.path.startsWith("/api/")) {
+      response.sendFile(frontendIndexPath);
+      return;
+    }
+    next();
+  });
+}
 
 app.use((_request, response) => {
   response.status(404).json({ message: "Ruta no encontrada" });
